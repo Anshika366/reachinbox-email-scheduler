@@ -1,0 +1,21 @@
+{
+  "name": "reachinbox-scheduler",
+  "version": "1.0.0",
+  "private": true,
+  "workspaces": [
+    "apps/*"
+  ],
+  "scripts": {
+    "dev": "npm run dev --workspace=backend & npm run dev --workspace=frontend",
+    "dev:backend": "npm run dev --workspace=backend",
+    "dev:frontend": "npm run dev --workspace=frontend",
+    "build": "npm run build --workspaces",
+    "test": "npm run test --workspace=backend"
+  },
+  "overrides": {
+    "@rollup/rollup-win32-x64-msvc": "npm:@rollup/wasm-node@^4.66.0"
+  },
+  "devDependencies": {
+    "@rollup/wasm-node": "^4.66.0"
+  }
+}

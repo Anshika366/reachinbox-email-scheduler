@@ -1,0 +1,12 @@
+node_modules
+dist
+.env
+.env.*
+!.env.example
+data
+*.log
+coverage
+build
+.system_generated
+scratch
+.DS_Store
