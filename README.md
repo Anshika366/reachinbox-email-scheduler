@@ -262,28 +262,31 @@ http://localhost:4000/admin/queues
 
 ### 1. Recovery Architecture & Job Reconciliation
 When the backend boots, `reconcileScheduledJobs()` reconciles the database source of truth (`emails` table) with the BullMQ Redis queue:
-- **Pending Scheduled Emails (`status = 'scheduled'`)**: If a job was lost from Redis or not queued, BullMQ restores the delayed job matching the remaining delay until `scheduled_at`.
+- **Pending Scheduled Emails (`status = 'scheduled'`)**: If a job was lost from Redis or not queued, BullMQ restores the delayed job matching the remaining delay until `scheduled_at` (safe because these emails were never dispatched to SMTP).
 - **Completed Emails (`status = 'sent'`)**: Fully excluded from reconciliation to guarantee that completed deliveries are never re-queued during normal restarts.
 - **Interrupted Emails (`status = 'processing'`)**: If an email was actively executing during an ungraceful shutdown or crash, recovery logic inspects the record:
   - If `smtp_message_id` was already written to the database before the crash, recovery finalizes the record to `status = 'sent'` without re-enqueueing.
-  - If `smtp_message_id` is `NULL`, recovery resets the status to `scheduled` and re-enqueues the job in BullMQ to prevent silent message loss.
+  - **Fail-Closed Policy (If `smtp_message_id` is `NULL`)**: To strictly satisfy the **no-duplicate-email requirement**, the system **does NOT automatically re-enqueue** ambiguous in-flight emails. Instead, recovery updates the record to `status = 'failed'` with an explicit delivery notice:
+    > `Interrupted by server restart while in processing state. Automatic re-enqueue suppressed to prevent duplicate delivery (delivery status uncertain).`
 
-### 2. The Crash Window & At-Least-Once Delivery Semantics
+### 2. Delivery Guarantees & The Fail-Closed Trade-Off
 > [!IMPORTANT]
-> **Exactly-once email delivery is NOT guaranteed across ungraceful process crashes.** The system provides **at-least-once delivery** in crash failure scenarios.
+> **Exactly-once email delivery is NOT achievable across ungraceful crashes on standard SMTP relays.** The system employs a **fail-closed, at-most-once automated delivery policy** across crash scenarios.
 
-Standard SMTP relays do not participate in distributed two-phase commit (2PC) transactions with PostgreSQL. A non-transactional boundary exists during transmission:
-1. **Network Acceptance**: The worker transmits the payload to SMTP (`await sendEmailViaSmtp(...)`). The SMTP server accepts the message (`250 OK: Message queued/sent`).
-2. **Crash Window**: If the Node.js process crashes, encounters an OOM kill, or loses power *after* the SMTP server accepts the message but *before* the database status update query (`UPDATE emails SET status = 'sent', ...`) completes, the database row remains in status `processing` with `smtp_message_id = NULL`.
-3. **Re-Execution on Reboot**: Upon server restart, `reconcileScheduledJobs()` prioritizes message delivery over silent message drop. Because the database row was never committed as `sent`, it restores the job into BullMQ, which dispatches the email to SMTP a second time.
+Standard SMTP relays (RFC 5321) do not participate in distributed Two-Phase Commit (2PC) transactions with PostgreSQL. A non-transactional boundary exists during transmission:
+1. **Network Acceptance vs. Final Mailbox Delivery**: The worker transmits the payload to the SMTP relay (`await sendEmailViaSmtp(...)`). The SMTP relay accepts the message envelope and returns a status (`250 OK: Message queued/accepted`) along with a generated `smtp_message_id`. This proves handoff to the SMTP relay, but does not prove final recipient mailbox delivery (which remains subject to downstream MTA routing, spam filters, or asynchronous bounces).
+2. **Crash Window & Delivery Uncertainty**: If the Node.js process crashes, encounters an OOM kill, or loses power *after* the worker marks `processing` but *before* the database status update query (`UPDATE emails SET status = 'sent', ...`) completes, two distinct physical possibilities exist:
+   - *Possibility A*: The crash happened **before** SMTP relay transmission began. The email was never sent.
+   - *Possibility B*: The crash happened **after** the SMTP relay accepted the envelope (`250 OK`). The email was transmitted to the recipient, but the backend died before persisting the confirmation.
+3. **Why Fail-Closed is Enforced**: Because raw SMTP provides no standard query API to determine whether an ambiguous envelope was already accepted, automatically re-enqueuing the email would cause a **duplicate send** under Possibility B. The system therefore fails closed: it suppresses automated re-dispatch, marks the job as `failed`, and records the uncertainty.
+4. **Caution Regarding Manual Retries**: Manual retries are **not blindly safe**. If Possibility B occurred, triggering a manual resend will send a duplicate email to the recipient. The UI surfaces this delivery notice so operators are fully informed of the uncertainty before deciding whether to re-dispatch.
 
-### 3. Duplicate-Email Risk & Current Mitigations
-- **Duplicate Risk**: Duplicates can occur only if a crash strikes within the sub-millisecond window between SMTP transmission acceptance and the database `UPDATE` commit.
-- **Current Mitigations**:
-  1. **Worker-Level Status Guard**: `emailWorker.ts` re-queries PostgreSQL before every send attempt (`if (email.status === 'sent') return;`). If another worker or a previous run committed the `sent` status, execution halts immediately.
-  2. **Deterministic BullMQ Job IDs**: Jobs are keyed by `jobId: email-${email.id}`, preventing BullMQ from enqueuing duplicate delayed jobs for the same record in Redis.
-  3. **Completed Exclusions**: `reconcileScheduledJobs()` excludes `sent` records and auto-finalizes any `processing` records with existing `smtp_message_id` values.
-  4. **Targeted Jest Coverage**: The automated integration test suite explicitly tests this crash window (`Crash Window Test: An email interrupted in 'processing' status before 'sent' commitment is re-enqueued on restart, illustrating at-least-once delivery semantics`).
+### 3. Duplicate-Email Mitigations
+- **Deterministic BullMQ Job IDs**: Jobs are keyed by `jobId: email-${email.id}`, preventing BullMQ from registering duplicate delayed jobs in Redis while a job is pending.
+- **Worker-Level Database Guard**: `emailWorker.ts` re-queries PostgreSQL before every send attempt (`if (email.status === 'sent') return;`). If another worker or a previous run committed the `sent` status, execution halts immediately.
+- **Automated Re-Enqueue Suppression**: Ambiguous `processing` emails on reboot are never auto-retried.
+- **Completed Exclusions**: `reconcileScheduledJobs()` completely ignores `sent` records.
+- **Automated Jest Coverage**: Integration tests explicitly verify that neither crash case (with or without `smtp_message_id`) results in automated duplicate re-enqueuing.
 
 ### 4. How to Verify Restart Recovery
 1. Schedule an email campaign set for 5 minutes in the future via the dashboard or API.

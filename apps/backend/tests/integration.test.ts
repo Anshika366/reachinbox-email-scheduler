@@ -121,6 +121,7 @@ describe("ReachInbox Integration & System Test Suite", () => {
       const queueJob = await emailQueue.getJob(`email-${emailId}`);
       expect(queueJob).toBeDefined();
       expect(queueJob?.opts.delay).toBeGreaterThan(0);
+      if (queueJob) await queueJob.remove().catch(() => {});
     });
 
     test("Reconciles pending jobs idempotently after simulated server restart", async () => {
@@ -152,14 +153,16 @@ describe("ReachInbox Integration & System Test Suite", () => {
 
       const secondReconcileCount = await reconcileScheduledJobs();
       expect(secondReconcileCount).toBe(0);
+
+      if (job) await job.remove().catch(() => {});
     });
 
-    test("Crash Window Test: An email interrupted in 'processing' status before 'sent' commitment is re-enqueued on restart, illustrating at-least-once delivery semantics", async () => {
+    test("Crash Window Test (Fail-Closed, smtp_message_id absent): Interrupted processing email without message ID is marked failed and NOT automatically re-enqueued", async () => {
       const emailId = crypto.randomUUID();
       const scheduledAt = new Date(Date.now() + 60000);
 
       // Simulate crash window: worker set status='processing', but backend crashed
-      // before status could be committed as 'sent'.
+      // before SMTP acceptance or before message ID could be recorded.
       await query(
         `INSERT INTO emails (
           id, user_id, sender_id, sender_email, recipient, subject, body,
@@ -178,18 +181,16 @@ describe("ReachInbox Integration & System Test Suite", () => {
       );
 
       // Server reboot reconciliation
-      const count = await reconcileScheduledJobs();
-      expect(count).toBeGreaterThanOrEqual(1);
+      await reconcileScheduledJobs();
 
-      // Confirms the job was re-enqueued in BullMQ to avoid message loss
+      // Confirms the job was NOT re-enqueued in BullMQ (guarantees zero automated duplicate sends)
       const job = await emailQueue.getJob(`email-${emailId}`);
-      expect(job).toBeDefined();
+      expect(job).toBeUndefined();
 
-      // Confirms database status was reset to 'scheduled'
-      const updated = await query<EmailRecord>("SELECT status FROM emails WHERE id = $1", [emailId]);
-      expect(updated.rows[0].status).toBe("scheduled");
-      // Note: Because this email may have already been accepted by SMTP before the crash,
-      // re-running it may result in a duplicate send (at-least-once delivery).
+      // Confirms database status was marked 'failed' with explicit delivery uncertainty notice
+      const updated = await query<EmailRecord>("SELECT status, error_details FROM emails WHERE id = $1", [emailId]);
+      expect(updated.rows[0].status).toBe("failed");
+      expect(updated.rows[0].error_details).toContain("Automatic re-enqueue suppressed to prevent duplicate delivery");
     });
 
     test("Crash Window Test (smtp_message_id present): Interrupted processing email with persisted smtp_message_id is finalized to 'sent' and not re-enqueued", async () => {

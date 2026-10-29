@@ -97,6 +97,12 @@ export const ThreadDetail: React.FC<ThreadDetailProps> = ({ email, onBack }) => 
               <span className="text-gray-400 block text-[11px]">Min Delay</span>
               <span className="font-semibold text-gray-800 mt-0.5 block">{email.min_delay_ms} ms</span>
             </div>
+            {email.error_details && (
+              <div className="col-span-2 md:col-span-4 bg-amber-50 p-3.5 rounded-lg border border-amber-200 text-amber-900 mt-1">
+                <span className="font-bold block text-xs mb-1 text-amber-950">Delivery &amp; Recovery Notice</span>
+                <span className="block text-xs leading-relaxed text-amber-800">{email.error_details}</span>
+              </div>
+            )}
           </div>
         </div>
       </div>

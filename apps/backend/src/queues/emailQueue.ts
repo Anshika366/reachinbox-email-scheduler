@@ -3,6 +3,7 @@ import { config } from "../config/index.js";
 import { redis } from "../services/redisService.js";
 import { EmailJobData, EmailRecord } from "../types/index.js";
 import { query } from "../db/index.js";
+import { updateEmailDocumentStatus } from "../services/elasticsearchService.js";
 
 export const QUEUE_NAME = "email-dispatch-queue";
 
@@ -44,16 +45,40 @@ export async function reconcileScheduledJobs(): Promise<number> {
   let reconciledCount = 0;
 
   for (const email of res.rows) {
-    // If email was marked 'processing' but already recorded an smtp_message_id,
-    // SMTP succeeded before the crash. Finalize status to 'sent' rather than resending.
+    // 1. If email was marked 'processing' and already recorded an smtp_message_id,
+    // SMTP relay handoff succeeded before the crash. Finalize status to 'sent' rather than resending.
     if (email.status === "processing" && email.smtp_message_id) {
       await query(
         "UPDATE emails SET status = 'sent', updated_at = NOW() WHERE id = $1",
         [email.id]
       );
+      await updateEmailDocumentStatus(email.id, "sent", email.sent_at || new Date());
       continue;
     }
 
+    // 2. Fail-closed crash recovery: If email was in 'processing' when the server crashed,
+    // but no smtp_message_id was recorded, external delivery status is uncertain.
+    // To strictly guarantee ZERO automated duplicate email transmissions (satisfying the no-duplicate requirement),
+    // do NOT automatically re-enqueue it. Mark as 'failed' with explicit delivery uncertainty notice.
+    if (email.status === "processing") {
+      const existingJob = await emailQueue.getJob(`email-${email.id}`);
+      if (existingJob) {
+        await existingJob.remove().catch(() => {});
+      }
+
+      await query(
+        `UPDATE emails
+         SET status = 'failed',
+             error_details = 'Interrupted by server restart while in processing state. Automatic re-enqueue suppressed to prevent duplicate delivery (delivery status uncertain).',
+             updated_at = NOW()
+         WHERE id = $1`,
+        [email.id]
+      );
+      await updateEmailDocumentStatus(email.id, "failed");
+      continue;
+    }
+
+    // 3. For 'scheduled' emails (which were strictly waiting and never sent to SMTP):
     const expectedJobId = `email-${email.id}`;
     const existingJob = await emailQueue.getJob(expectedJobId);
 
