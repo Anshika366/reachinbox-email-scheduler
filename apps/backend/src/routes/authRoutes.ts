@@ -7,6 +7,28 @@ import { User, Sender } from "../types/index.js";
 
 const router = Router();
 
+router.get("/google", (req: Request, res: Response) => {
+  if (!config.google.clientId) {
+    res.status(400).json({ error: "Google OAuth credentials not configured" });
+    return;
+  }
+
+  const state = crypto.randomBytes(16).toString("hex");
+  (req.session as any).oauthState = state;
+
+  const params = new URLSearchParams({
+    client_id: config.google.clientId,
+    redirect_uri: config.google.callbackUrl,
+    response_type: "code",
+    scope: "openid email profile",
+    state,
+    access_type: "offline",
+    prompt: "consent"
+  });
+
+  res.redirect(`https://accounts.google.com/o/oauth2/v2/auth?${params.toString()}`);
+});
+
 router.get("/google/url", (req: Request, res: Response) => {
   if (!config.google.clientId) {
     res.status(400).json({ error: "Google OAuth credentials not configured" });
