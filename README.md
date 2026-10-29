@@ -301,7 +301,7 @@ Run the full automated test suite:
 ```powershell
 npm test
 ```
-The suite executes 22 automated tests across unit and integration test suites:
+The suite executes 23 automated tests across unit and integration test suites:
 - **Authentication & Protected Routes**: Unauthorized access rejections, session verification, Google OAuth endpoint validation, and health check validation.
 - **Email Scheduling, Persistence & Crash Window**: Future date/time scheduling, PostgreSQL transaction persistence, BullMQ delayed job creation, idempotent restart reconciliation, and crash-window at-least-once re-enqueue verification.
 - **Distributed Rate Limiting & Pacing**: Atomic Redis Lua script evaluation, per-hour quota boundaries, retry delay calculations, and cross-worker non-overlapping pacing slots.

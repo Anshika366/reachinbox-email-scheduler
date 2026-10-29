@@ -192,6 +192,42 @@ describe("ReachInbox Integration & System Test Suite", () => {
       // re-running it may result in a duplicate send (at-least-once delivery).
     });
 
+    test("Crash Window Test (smtp_message_id present): Interrupted processing email with persisted smtp_message_id is finalized to 'sent' and not re-enqueued", async () => {
+      const emailId = crypto.randomUUID();
+      const pastTime = new Date(Date.now() - 30000);
+
+      // Simulate state where SMTP message ID was written to the record,
+      // but status remained 'processing' when the process died.
+      await query(
+        `INSERT INTO emails (
+          id, user_id, sender_id, sender_email, recipient, subject, body,
+          scheduled_at, status, smtp_message_id, min_delay_ms, hourly_limit, created_at, updated_at
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'processing', 'persisted-msg-id-12345', 2000, 2, NOW(), NOW())`,
+        [
+          emailId,
+          testUserId,
+          testSenderId,
+          testSenderEmail,
+          "msgidpresent.test@example.com",
+          "MsgID Present Test Email",
+          "<p>Testing recovery with persisted message ID</p>",
+          pastTime
+        ]
+      );
+
+      // Execute real recovery logic
+      await reconcileScheduledJobs();
+
+      // Confirms database status was finalized to 'sent'
+      const updated = await query<EmailRecord>("SELECT status, smtp_message_id FROM emails WHERE id = $1", [emailId]);
+      expect(updated.rows[0].status).toBe("sent");
+      expect(updated.rows[0].smtp_message_id).toBe("persisted-msg-id-12345");
+
+      // Confirms the job was NOT re-enqueued in BullMQ (avoids duplicate transmission)
+      const job = await emailQueue.getJob(`email-${emailId}`);
+      expect(job).toBeUndefined();
+    });
+
     test("Recovery Idempotency: Emails already marked 'sent' are excluded from restart reconciliation", async () => {
       const sentEmailId = crypto.randomUUID();
       const pastTime = new Date(Date.now() - 60000);
