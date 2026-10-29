@@ -3,8 +3,10 @@ import path from "path";
 import fs from "fs";
 
 const candidateEnvFiles = [
+  path.resolve(process.cwd(), ".env"),
   path.resolve(process.cwd(), "apps/backend/.env"),
-  path.resolve(process.cwd(), ".env")
+  path.resolve(process.cwd(), "../.env"),
+  path.resolve(process.cwd(), "../../.env")
 ];
 
 for (const envFile of candidateEnvFiles) {
