@@ -48,7 +48,7 @@ This platform provides:
 - **Campaign Composer & Recipient Import**: Rich HTML/text composer supporting multi-recipient input and bulk CSV/text uploads with email deduplication and format validation.
 - **Configurable Scheduling & Timing Presets**: Schedule campaigns for any future UTC timestamp or quick presets ("Tomorrow 10:00 AM").
 - **Sender Pacing (`MIN_DELAY_MS`)**: Enforces non-overlapping, sequential send slots per sender across concurrent workers using atomic Redis locks.
-- **Hourly Rate Limiting & Auto-Rescheduling**: Sliding hourly window quotas per sender. Over-limit emails are automatically rescheduled into the next hour window rather than dropped.
+- **Hourly Rate Limiting & Auto-Rescheduling**: Fixed hourly window bucket quotas per sender. Over-limit emails are automatically rescheduled into the next hour window rather than dropped.
 - **Scheduled & Sent Views**: Dedicated views tracking emails in `scheduled`, `processing`, `sent`, and `failed` states.
 - **Delivery Uncertainty Notices**: Interrupted emails surface an explicit delivery uncertainty warning in the UI to prevent blind operator retries.
 - **Slack Alerting**: Dispatches automated alerts to connected Slack channels when a sender reaches an hourly quota, with window-based deduplication.
@@ -216,6 +216,15 @@ The project uses a root `.env` and `apps/backend/.env`. All sensitive credential
 | `BULL_BOARD_USER` | Yes | `admin` | HTTP Basic Auth username for queue monitor |
 | `BULL_BOARD_PASS` | Yes | *(set strong non-default password)* | HTTP Basic Auth password (min 8 chars, non-default) |
 
+### Secret Safety and Production Setup
+- **Placeholder Values vs. Production Secrets**: The default secret strings shown above (`reachinbox_secret_session_key_...`, `reachinbox_slack_encryption_key_...`) are local development placeholders. In production environments, replace them with unique, cryptographically strong random secrets.
+- **`SESSION_SECRET`**: Used by `express-session` to sign the HTTP-only session cookie (`connect.sid`). Generate a unique 32-byte secret (e.g., via `openssl rand -hex 32` or Node.js `crypto.randomBytes(32).toString('hex')`).
+- **`SLACK_ENCRYPTION_KEY`**: Key used for AES-256-CBC encryption of Slack Bot tokens in PostgreSQL (`access_token_encrypted`). Must be a distinct string of at least 32 characters/bytes.
+- **`BULL_BOARD_PASS`**: Password guarding the Bull Board administrative UI (`/admin/queues`). In production mode (`NODE_ENV=production`), passwords shorter than 8 characters or defaults like `adminpassword` are rejected by the authentication middleware.
+- **Ethereal SMTP Credentials**: If `ETHEREAL_USER` and `ETHEREAL_PASS` are omitted or left blank in `.env`, the backend automatically calls `nodemailer.createTestAccount()` on initial dispatch to generate ephemeral credentials. To persist and review emails under a fixed account dashboard across multiple server restarts, register for a free account at [https://ethereal.email](https://ethereal.email) and populate both variables.
+- **Google OAuth Setup**: Obtain credentials in Google Cloud Console under APIs & Services > Credentials > OAuth 2.0 Client IDs. Ensure `http://localhost:4000/api/auth/google/callback` is added to **Authorized redirect URIs**.
+- **Slack OAuth Setup**: Create an app in [api.slack.com/apps](https://api.slack.com/apps), configure Bot Token Scopes (`chat:write`, `channels:read`), and set the Redirect URL to `http://localhost:4000/api/integrations/slack/callback`.
+
 ---
 
 ## 8. Running the Application
@@ -263,10 +272,11 @@ To prevent spam filter flags, dispatches for a sender must be spaced apart by at
 - Managed via an atomic Redis Lua script: `acquireSenderSendSlot(senderId, minDelayMs)`.
 - When multiple worker threads process jobs for the same sender simultaneously, each worker receives an atomic reservation timestamp guaranteeing strictly non-overlapping sends.
 
-### 3. Distributed Sliding-Hour Quota
-- Hourly quotas are tracked per sender via atomic Redis Lua script: `checkAndIncrementHourlyRateLimit(senderId, limit)`.
-- Key structure: `ratelimit:sender:{senderId}:{hourBucket}` with automatic millisecond TTL (`PEXPIRE`).
-- **Rescheduling Behavior**: If quota is exceeded, the email is **never dropped**. The worker calculates the exact millisecond remaining until the next hour window (`retryAfterMs`), updates `scheduled_at` in PostgreSQL, re-enqueues a delayed BullMQ job, and triggers a deduplicated Slack alert.
+### 3. Distributed Fixed Hourly Window Quota
+- Hourly quotas are tracked per sender via an atomic Redis Lua script: `checkAndIncrementHourlyRateLimit(senderId, limit)`.
+- **Window Bucket Mechanism**: Uses fixed hourly window buckets computed via `Math.floor(Date.now() / 3600000)`. Redis key structure: `ratelimit:sender:{senderId}:{hourBucket}` with automatic millisecond TTL (`PEXPIRE`) equal to the remaining time in the current UTC hour.
+- **Atomic Quota Reservation**: The Lua script atomically increments the counter only if the current count is strictly below the limit, preventing race conditions across concurrent workers.
+- **Rescheduling Behavior**: If quota is exceeded, the email is **never dropped**. The worker calculates the exact milliseconds remaining until the start of the next hour window (`retryAfterMs`), updates `scheduled_at` in PostgreSQL, re-enqueues a delayed BullMQ job, and triggers a deduplicated Slack alert.
 
 ---
 
@@ -375,7 +385,7 @@ npm test
 - **Persistence & BullMQ**: Delayed scheduling, PostgreSQL row creation, job removal cleanup.
 - **Fail-Closed Recovery**: Tests verifying that interrupted `processing` emails without `smtp_message_id` are marked `failed` and NOT re-enqueued, and that emails with `smtp_message_id` are finalized to `sent`.
 - **Recovery Idempotency**: Verified that `sent` emails are completely ignored by reconciliation.
-- **Atomic Concurrency**: Redis Lua hourly rate limiting, positive retry delay calculations, and non-overlapping sequential slot reservation.
+- **Atomic Concurrency**: Redis Lua fixed hourly window rate limiting, positive retry delay calculations, and non-overlapping sequential slot reservation.
 - **SMTP Delivery**: Live Nodemailer Ethereal dispatch, Message-ID capture, preview URL verification.
 - **Elasticsearch Search**: Document indexing, user isolation queries, fallback verification.
 - **Slack Alerting**: AES-256 token encryption, OAuth URL generation, and single alert deduplication per window.
@@ -441,7 +451,7 @@ reachinbox-scheduler/
 2. **Manual Retry Duplicate Risk**:
    - If the SMTP relay accepted an envelope immediately before a crash, manually re-sending will deliver a duplicate email. The UI surfaces this warning to operators.
 3. **Throughput vs. Pacing**:
-   - Send throughput per sender is intentionally bounded by `MIN_DELAY_MS` to prevent spam filter triggers. High throughput requires scaling across multiple verified sender identities.
+   - Send throughput per sender is intentionally bounded by `MIN_DELAY_MS` to prevent spam filter triggers. Senders are also subject to configured hourly limits (enforced via fixed hourly window buckets). High aggregate throughput requires scaling across multiple verified sender identities.
 
 4. **1,000-Job Enqueue Simulation vs. End-to-End Delivery**:
    - The 1,000-job benchmark validates BullMQ and Redis memory and enqueue performance (139ms duration for 1,000 jobs). It does not guarantee instantaneous external email delivery, as live delivery is intentionally rate-limited by `MIN_DELAY_MS` pacing and provider hourly limits.
@@ -473,21 +483,21 @@ reachinbox-scheduler/
 
 | Requirement | Implementation / Test File | Status | Notes |
 | :--- | :--- | :--- | :--- |
-| **TypeScript + Express Backend** | [`apps/backend/src/server.ts`](file:///c:/Users/anshi/Desktop/reachinbox-scheduler/apps/backend/src/server.ts) | **PASS** | Verified with `tsc` build and runtime execution. |
-| **PostgreSQL Persistence & Schema** | [`apps/backend/src/db/migrate.ts`](file:///c:/Users/anshi/Desktop/reachinbox-scheduler/apps/backend/src/db/migrate.ts) | **PASS** | Verified tables, constraints, foreign keys, and indexes. |
-| **BullMQ & Redis (Zero Cron Jobs)** | [`apps/backend/src/queues/emailQueue.ts`](file:///c:/Users/anshi/Desktop/reachinbox-scheduler/apps/backend/src/queues/emailQueue.ts) | **PASS** | Grep confirms 0 cron dependencies; uses BullMQ delayed jobs. |
-| **Configurable Worker Concurrency** | [`apps/backend/src/workers/emailWorker.ts`](file:///c:/Users/anshi/Desktop/reachinbox-scheduler/apps/backend/src/workers/emailWorker.ts) | **PASS** | Verified `WORKER_CONCURRENCY` applied to BullMQ Worker. |
-| **Sender Pacing (Minimum Delay)** | [`apps/backend/src/services/redisService.ts`](file:///c:/Users/anshi/Desktop/reachinbox-scheduler/apps/backend/src/services/redisService.ts) | **PASS** | Atomic Redis Lua script coordinates slot reservation across workers. |
-| **Hourly Rate Limiting & Rescheduling** | [`apps/backend/src/workers/emailWorker.ts`](file:///c:/Users/anshi/Desktop/reachinbox-scheduler/apps/backend/src/workers/emailWorker.ts) | **PASS** | Atomic Lua script reschedules over-quota jobs to next hour. |
-| **Slack Rate-Limit Notifications** | [`apps/backend/src/services/slackService.ts`](file:///c:/Users/anshi/Desktop/reachinbox-scheduler/apps/backend/src/services/slackService.ts) | **PASS** | Live alert posted to `#all-reachinbox-testing` with deduplication. |
-| **Ethereal SMTP Relay & Previews** | [`apps/backend/src/services/emailService.ts`](file:///c:/Users/anshi/Desktop/reachinbox-scheduler/apps/backend/src/services/emailService.ts) | **PASS** | Captures real Message-ID and Ethereal preview URLs. |
-| **Elasticsearch Full-Text Search** | [`apps/backend/src/services/elasticsearchService.ts`](file:///c:/Users/anshi/Desktop/reachinbox-scheduler/apps/backend/src/services/elasticsearchService.ts) | **PASS** | Multi-match querying with tenant isolation and DB fallback. |
-| **React + Tailwind Frontend (Figma Matched)** | [`apps/frontend/src/App.tsx`](file:///c:/Users/anshi/Desktop/reachinbox-scheduler/apps/frontend/src/App.tsx) | **PASS** | Verified components, typography, badges, and layout. |
-| **CSV / Text Recipient Import** | [`apps/frontend/src/components/ComposeModal.tsx`](file:///c:/Users/anshi/Desktop/reachinbox-scheduler/apps/frontend/src/components/ComposeModal.tsx) | **PASS** | CSV parsing with email deduplication and format validation. |
-| **Sent & Failed Display in Sent View** | [`apps/frontend/src/components/SentList.tsx`](file:///c:/Users/anshi/Desktop/reachinbox-scheduler/apps/frontend/src/components/SentList.tsx) | **PASS** | Renders both Sent and Failed badges with delivery notices. |
-| **Google OAuth Authentication** | [`apps/backend/src/routes/authRoutes.ts`](file:///c:/Users/anshi/Desktop/reachinbox-scheduler/apps/backend/src/routes/authRoutes.ts) | **PASS** | Authorization-code flow, profile retrieval, and session cookie. |
-| **Protected Bull Board Dashboard** | [`apps/backend/src/app.ts`](file:///c:/Users/anshi/Desktop/reachinbox-scheduler/apps/backend/src/app.ts) | **PASS** | HTTP Basic Auth required; rejects weak passwords. |
-| **Strict No-Duplicate External Delivery** | [`apps/backend/src/queues/emailQueue.ts`](file:///c:/Users/anshi/Desktop/reachinbox-scheduler/apps/backend/src/queues/emailQueue.ts) | **PARTIAL** | Automated recovery is fail-closed (at-most-once); raw SMTP lacks 2PC, so external exactly-once delivery across crashes is technically impossible. |
+| **TypeScript + Express Backend** | [`apps/backend/src/server.ts`](apps/backend/src/server.ts) | **PASS** | Verified with `tsc` build and runtime execution. |
+| **PostgreSQL Persistence & Schema** | [`apps/backend/src/db/migrate.ts`](apps/backend/src/db/migrate.ts) | **PASS** | Verified tables, constraints, foreign keys, and indexes. |
+| **BullMQ & Redis (Zero Cron Jobs)** | [`apps/backend/src/queues/emailQueue.ts`](apps/backend/src/queues/emailQueue.ts) | **PASS** | Grep confirms 0 cron dependencies; uses BullMQ delayed jobs. |
+| **Configurable Worker Concurrency** | [`apps/backend/src/workers/emailWorker.ts`](apps/backend/src/workers/emailWorker.ts) | **PASS** | Verified `WORKER_CONCURRENCY` applied to BullMQ Worker. |
+| **Sender Pacing (Minimum Delay)** | [`apps/backend/src/services/redisService.ts`](apps/backend/src/services/redisService.ts) | **PASS** | Atomic Redis Lua script coordinates slot reservation across workers. |
+| **Hourly Rate Limiting & Rescheduling** | [`apps/backend/src/workers/emailWorker.ts`](apps/backend/src/workers/emailWorker.ts) | **PASS** | Atomic Lua script tracks fixed hourly window buckets and reschedules over-quota jobs to next hour. |
+| **Slack Rate-Limit Notifications** | [`apps/backend/src/services/slackService.ts`](apps/backend/src/services/slackService.ts) | **PASS** | Live alert posted to `#all-reachinbox-testing` with deduplication. |
+| **Ethereal SMTP Relay & Previews** | [`apps/backend/src/services/emailService.ts`](apps/backend/src/services/emailService.ts) | **PASS** | Captures real Message-ID and Ethereal preview URLs. |
+| **Elasticsearch Full-Text Search** | [`apps/backend/src/services/elasticsearchService.ts`](apps/backend/src/services/elasticsearchService.ts) | **PASS** | Multi-match querying with tenant isolation and DB fallback. |
+| **React + Tailwind Frontend (Figma Matched)** | [`apps/frontend/src/App.tsx`](apps/frontend/src/App.tsx) | **PASS** | Verified components, typography, badges, and layout. |
+| **CSV / Text Recipient Import** | [`apps/frontend/src/components/ComposeModal.tsx`](apps/frontend/src/components/ComposeModal.tsx) | **PASS** | CSV parsing with email deduplication and format validation. |
+| **Sent & Failed Display in Sent View** | [`apps/frontend/src/components/SentList.tsx`](apps/frontend/src/components/SentList.tsx) | **PASS** | Renders both Sent and Failed badges with delivery notices. |
+| **Google OAuth Authentication** | [`apps/backend/src/routes/authRoutes.ts`](apps/backend/src/routes/authRoutes.ts) | **PASS** | Authorization-code flow, profile retrieval, and session cookie. |
+| **Protected Bull Board Dashboard** | [`apps/backend/src/app.ts`](apps/backend/src/app.ts) | **PASS** | HTTP Basic Auth required; rejects weak passwords. |
+| **Strict No-Duplicate External Delivery** | [`apps/backend/src/queues/emailQueue.ts`](apps/backend/src/queues/emailQueue.ts) | **PARTIAL** | Automated recovery is fail-closed (at-most-once); raw SMTP lacks 2PC, so external exactly-once delivery across crashes is technically impossible. |
 | **Private GitHub Remote & Code Push** | Local repository (`master` branch) | **PARTIAL** | All changes committed locally; remote origin URL pending setup. |
 | **Reviewer Access (`Mitrajit`, `Yadav036`)** | GitHub repository settings | **NOT VERIFIED** | Pending repository invitation on GitHub. |
 | **5-Minute Walkthrough Demo Video** | Video link (Loom / Drive) | **NOT VERIFIED** | To be recorded and linked by candidate prior to submission. |
