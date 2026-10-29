@@ -153,6 +153,72 @@ describe("ReachInbox Integration & System Test Suite", () => {
       const secondReconcileCount = await reconcileScheduledJobs();
       expect(secondReconcileCount).toBe(0);
     });
+
+    test("Crash Window Test: An email interrupted in 'processing' status before 'sent' commitment is re-enqueued on restart, illustrating at-least-once delivery semantics", async () => {
+      const emailId = crypto.randomUUID();
+      const scheduledAt = new Date(Date.now() + 60000);
+
+      // Simulate crash window: worker set status='processing', but backend crashed
+      // before status could be committed as 'sent'.
+      await query(
+        `INSERT INTO emails (
+          id, user_id, sender_id, sender_email, recipient, subject, body,
+          scheduled_at, status, min_delay_ms, hourly_limit, created_at, updated_at
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'processing', 2000, 2, NOW(), NOW())`,
+        [
+          emailId,
+          testUserId,
+          testSenderId,
+          testSenderEmail,
+          "crashwindow.test@example.com",
+          "Crash Window Test Email",
+          "<p>Simulating crash window</p>",
+          scheduledAt
+        ]
+      );
+
+      // Server reboot reconciliation
+      const count = await reconcileScheduledJobs();
+      expect(count).toBeGreaterThanOrEqual(1);
+
+      // Confirms the job was re-enqueued in BullMQ to avoid message loss
+      const job = await emailQueue.getJob(`email-${emailId}`);
+      expect(job).toBeDefined();
+
+      // Confirms database status was reset to 'scheduled'
+      const updated = await query<EmailRecord>("SELECT status FROM emails WHERE id = $1", [emailId]);
+      expect(updated.rows[0].status).toBe("scheduled");
+      // Note: Because this email may have already been accepted by SMTP before the crash,
+      // re-running it may result in a duplicate send (at-least-once delivery).
+    });
+
+    test("Recovery Idempotency: Emails already marked 'sent' are excluded from restart reconciliation", async () => {
+      const sentEmailId = crypto.randomUUID();
+      const pastTime = new Date(Date.now() - 60000);
+
+      await query(
+        `INSERT INTO emails (
+          id, user_id, sender_id, sender_email, recipient, subject, body,
+          scheduled_at, status, smtp_message_id, sent_at, min_delay_ms, hourly_limit, created_at, updated_at
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'sent', 'test-smtp-msg-id', NOW(), 2000, 2, NOW(), NOW())`,
+        [
+          sentEmailId,
+          testUserId,
+          testSenderId,
+          testSenderEmail,
+          "alreadysent.test@example.com",
+          "Already Sent Email",
+          "<p>Already sent</p>",
+          pastTime
+        ]
+      );
+
+      await reconcileScheduledJobs();
+
+      // Confirm job was NEVER added to BullMQ
+      const job = await emailQueue.getJob(`email-${sentEmailId}`);
+      expect(job).toBeUndefined();
+    });
   });
 
   describe("Rate Limiting & Pacing Concurrency (Redis & Lua)", () => {

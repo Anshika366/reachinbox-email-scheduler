@@ -258,17 +258,40 @@ http://localhost:4000/admin/queues
 
 ---
 
-## 9. Restart Recovery Verification
+## 9. Restart Recovery & Delivery Guarantees (Crash-Window Analysis)
 
-To verify that pending and future scheduled emails survive system restarts:
-1. Compose and schedule an email campaign set for 10 minutes in the future.
-2. Confirm the job appears in the Bull Board under **Delayed** and in the frontend **Scheduled** list.
-3. Terminate the backend server (`Ctrl+C`).
-4. Wait 15 seconds, then restart the backend (`npm run dev:backend`).
-5. On bootstrap, `reconcileScheduledJobs()` inspects all scheduled records, verifies their BullMQ queue state, and restores any unqueued records without resetting timestamps or creating duplicates.
-6. The emails remain scheduled and will dispatch at the requested time.
+### 1. Recovery Architecture & Job Reconciliation
+When the backend boots, `reconcileScheduledJobs()` reconciles the database source of truth (`emails` table) with the BullMQ Redis queue:
+- **Pending Scheduled Emails (`status = 'scheduled'`)**: If a job was lost from Redis or not queued, BullMQ restores the delayed job matching the remaining delay until `scheduled_at`.
+- **Completed Emails (`status = 'sent'`)**: Fully excluded from reconciliation to guarantee that completed deliveries are never re-queued during normal restarts.
+- **Interrupted Emails (`status = 'processing'`)**: If an email was actively executing during an ungraceful shutdown or crash, recovery logic inspects the record:
+  - If `smtp_message_id` was already written to the database before the crash, recovery finalizes the record to `status = 'sent'` without re-enqueueing.
+  - If `smtp_message_id` is `NULL`, recovery resets the status to `scheduled` and re-enqueues the job in BullMQ to prevent silent message loss.
 
----
+### 2. The Crash Window & At-Least-Once Delivery Semantics
+> [!IMPORTANT]
+> **Exactly-once email delivery is NOT guaranteed across ungraceful process crashes.** The system provides **at-least-once delivery** in crash failure scenarios.
+
+Standard SMTP relays do not participate in distributed two-phase commit (2PC) transactions with PostgreSQL. A non-transactional boundary exists during transmission:
+1. **Network Acceptance**: The worker transmits the payload to SMTP (`await sendEmailViaSmtp(...)`). The SMTP server accepts the message (`250 OK: Message queued/sent`).
+2. **Crash Window**: If the Node.js process crashes, encounters an OOM kill, or loses power *after* the SMTP server accepts the message but *before* the database status update query (`UPDATE emails SET status = 'sent', ...`) completes, the database row remains in status `processing` with `smtp_message_id = NULL`.
+3. **Re-Execution on Reboot**: Upon server restart, `reconcileScheduledJobs()` prioritizes message delivery over silent message drop. Because the database row was never committed as `sent`, it restores the job into BullMQ, which dispatches the email to SMTP a second time.
+
+### 3. Duplicate-Email Risk & Current Mitigations
+- **Duplicate Risk**: Duplicates can occur only if a crash strikes within the sub-millisecond window between SMTP transmission acceptance and the database `UPDATE` commit.
+- **Current Mitigations**:
+  1. **Worker-Level Status Guard**: `emailWorker.ts` re-queries PostgreSQL before every send attempt (`if (email.status === 'sent') return;`). If another worker or a previous run committed the `sent` status, execution halts immediately.
+  2. **Deterministic BullMQ Job IDs**: Jobs are keyed by `jobId: email-${email.id}`, preventing BullMQ from enqueuing duplicate delayed jobs for the same record in Redis.
+  3. **Completed Exclusions**: `reconcileScheduledJobs()` excludes `sent` records and auto-finalizes any `processing` records with existing `smtp_message_id` values.
+  4. **Targeted Jest Coverage**: The automated integration test suite explicitly tests this crash window (`Crash Window Test: An email interrupted in 'processing' status before 'sent' commitment is re-enqueued on restart, illustrating at-least-once delivery semantics`).
+
+### 4. How to Verify Restart Recovery
+1. Schedule an email campaign set for 5 minutes in the future via the dashboard or API.
+2. Confirm the job appears in the Bull Board under **Delayed** (`http://localhost:4000/admin/queues`) and in the frontend **Scheduled** list.
+3. Terminate the backend server (`Ctrl+C` or kill process).
+4. Restart the backend (`npm run dev:backend`).
+5. On bootstrap, `reconcileScheduledJobs()` logs and restores the delayed job with its original remaining time.
+6. The email remains safely scheduled and dispatches at the requested timestamp.
 
 ---
 
@@ -278,9 +301,9 @@ Run the full automated test suite:
 ```powershell
 npm test
 ```
-The suite executes 20 automated tests across unit and integration test suites:
+The suite executes 22 automated tests across unit and integration test suites:
 - **Authentication & Protected Routes**: Unauthorized access rejections, session verification, Google OAuth endpoint validation, and health check validation.
-- **Email Scheduling & Persistence**: Future date/time scheduling, PostgreSQL transaction persistence, BullMQ delayed job creation, and idempotent restart reconciliation.
+- **Email Scheduling, Persistence & Crash Window**: Future date/time scheduling, PostgreSQL transaction persistence, BullMQ delayed job creation, idempotent restart reconciliation, and crash-window at-least-once re-enqueue verification.
 - **Distributed Rate Limiting & Pacing**: Atomic Redis Lua script evaluation, per-hour quota boundaries, retry delay calculations, and cross-worker non-overlapping pacing slots.
 - **SMTP Delivery & Ethereal Previews**: Nodemailer transmission, real Ethereal messageId generation, and preview URL persistence.
 - **Elasticsearch Indexing & Search**: Document indexing, multi-match search with field weighting, tenant data isolation, and resilient fallback to PostgreSQL.

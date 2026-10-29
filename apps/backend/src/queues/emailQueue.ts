@@ -44,6 +44,16 @@ export async function reconcileScheduledJobs(): Promise<number> {
   let reconciledCount = 0;
 
   for (const email of res.rows) {
+    // If email was marked 'processing' but already recorded an smtp_message_id,
+    // SMTP succeeded before the crash. Finalize status to 'sent' rather than resending.
+    if (email.status === "processing" && email.smtp_message_id) {
+      await query(
+        "UPDATE emails SET status = 'sent', updated_at = NOW() WHERE id = $1",
+        [email.id]
+      );
+      continue;
+    }
+
     const expectedJobId = `email-${email.id}`;
     const existingJob = await emailQueue.getJob(expectedJobId);
 
