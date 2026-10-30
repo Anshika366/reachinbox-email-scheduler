@@ -54,13 +54,32 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ user, onLogout }) 
     }
   }, []);
 
+  const pollActiveTab = useCallback(async () => {
+    try {
+      const [counts, emailsRes] = await Promise.all([
+        emailApi.getCounts(),
+        currentTab === "scheduled" ? emailApi.getScheduled() : emailApi.getSent()
+      ]);
+      setScheduledCount(counts.scheduled);
+      setSentCount(counts.sent);
+      if (currentTab === "scheduled") {
+        setScheduledEmails(emailsRes.emails);
+      } else {
+        setSentEmails(emailsRes.emails);
+      }
+    } catch {}
+  }, [currentTab]);
+
   useEffect(() => {
     fetchData();
-    const interval = setInterval(() => {
-      fetchData();
-    }, 5000);
-    return () => clearInterval(interval);
   }, [fetchData]);
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      pollActiveTab();
+    }, 10000);
+    return () => clearInterval(interval);
+  }, [pollActiveTab]);
 
   const handleSearch = async (query: string) => {
     setSearchQuery(query);

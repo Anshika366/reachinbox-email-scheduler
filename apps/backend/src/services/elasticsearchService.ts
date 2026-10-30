@@ -4,11 +4,20 @@ import { EmailRecord } from "../types/index.js";
 
 const INDEX_NAME = "emails";
 
+const isCloudWithoutEs =
+  (config.nodeEnv === "production" || !!process.env.RENDER) &&
+  config.elasticsearchUrl.includes("localhost");
+
 export const esClient = new Client({
-  node: config.elasticsearchUrl
+  node: config.elasticsearchUrl,
+  maxRetries: 0,
+  requestTimeout: 1000
 });
 
 export async function initElasticsearchIndex(): Promise<void> {
+  if (isCloudWithoutEs) {
+    return;
+  }
   try {
     const exists = await esClient.indices.exists({ index: INDEX_NAME });
     if (!exists) {
@@ -37,6 +46,7 @@ export async function initElasticsearchIndex(): Promise<void> {
 }
 
 export async function indexEmailDocument(email: EmailRecord): Promise<void> {
+  if (isCloudWithoutEs) return;
   try {
     await esClient.index({
       index: INDEX_NAME,
@@ -65,6 +75,7 @@ export async function updateEmailDocumentStatus(
   status: string,
   sentAt?: Date | null
 ): Promise<void> {
+  if (isCloudWithoutEs) return;
   try {
     await esClient.update({
       index: INDEX_NAME,
@@ -86,6 +97,9 @@ export async function searchEmailsInEs(
   from: number = 0,
   size: number = 50
 ): Promise<{ total: number; hits: any[] }> {
+  if (isCloudWithoutEs) {
+    return { total: 0, hits: [] };
+  }
   try {
     const mustQueries: any[] = [{ term: { userId } }];
 
@@ -129,6 +143,7 @@ export async function searchEmailsInEs(
 }
 
 export async function checkElasticsearchConnection(): Promise<boolean> {
+  if (isCloudWithoutEs) return false;
   try {
     return await esClient.ping();
   } catch {
