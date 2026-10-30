@@ -8,35 +8,22 @@ import nodemailer from "nodemailer";
 const router = Router();
 
 router.get("/test-ethereal", async (_req: Request, res: Response) => {
-  const ports = [2525, 587, 25];
-  const results: any[] = [];
-  for (const port of ports) {
-    try {
-      const testAccount = await nodemailer.createTestAccount();
-      const mailer = nodemailer.createTransport({
-        host: "smtp.ethereal.email",
-        port,
-        secure: false,
-        auth: { user: testAccount.user, pass: testAccount.pass },
-        connectionTimeout: 3000,
-        greetingTimeout: 3000,
-        socketTimeout: 3000
-      });
-      const info = await mailer.sendMail({
-        from: "sender@example.com",
-        to: "recipient@example.com",
-        subject: `Test Port ${port}`,
-        text: "hi"
-      });
-      const previewUrl = nodemailer.getTestMessageUrl(info);
-      results.push({ port, success: true, messageId: info.messageId, previewUrl });
-      res.json({ success: true, workingPort: port, previewUrl, results });
-      return;
-    } catch (e: any) {
-      results.push({ port, error: e.message });
-    }
+  const tls = await import("tls");
+  try {
+    const socket = tls.connect(993, "imap.ethereal.email", { timeout: 3000 }, () => {
+      res.json({ port993: "CONNECTED!" });
+      socket.end();
+    });
+    socket.on("error", (err) => {
+      res.json({ port993: "ERROR", message: err.message });
+    });
+    socket.on("timeout", () => {
+      res.json({ port993: "TIMEOUT" });
+      socket.destroy();
+    });
+  } catch (e: any) {
+    res.status(500).json({ error: e.message });
   }
-  res.status(500).json({ success: false, results });
 });
 
 router.get("/", async (_req: Request, res: Response) => {
