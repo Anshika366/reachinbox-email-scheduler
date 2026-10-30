@@ -16,7 +16,7 @@ function getApiBaseUrl(): string {
   return envUrl;
 }
 
-const API_BASE_URL = getApiBaseUrl();
+export const API_BASE_URL = getApiBaseUrl();
 
 const api = axios.create({
   baseURL: API_BASE_URL,

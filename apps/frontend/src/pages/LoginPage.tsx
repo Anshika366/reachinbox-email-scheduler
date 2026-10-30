@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { authApi } from "../services/api";
+import { authApi, API_BASE_URL } from "../services/api";
 
 interface LoginPageProps {
   onLoginSuccess: () => void;
@@ -11,17 +11,10 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const handleGoogleLogin = async () => {
-    try {
-      setIsLoading(true);
-      setError(null);
-      const url = await authApi.getGoogleAuthUrl();
-      window.location.href = url;
-    } catch (err: any) {
-      const msg = err.response?.data?.error || "Unable to initiate Google OAuth. Check backend configuration.";
-      setError(msg);
-      setIsLoading(false);
-    }
+  const handleGoogleLogin = () => {
+    setIsLoading(true);
+    setError(null);
+    window.location.href = `${API_BASE_URL}/auth/google`;
   };
 
   const handleEmailSubmit = async (e: React.FormEvent) => {
