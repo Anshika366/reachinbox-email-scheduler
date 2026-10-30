@@ -8,29 +8,35 @@ import nodemailer from "nodemailer";
 const router = Router();
 
 router.get("/test-ethereal", async (_req: Request, res: Response) => {
-  try {
-    const testAccount = await nodemailer.createTestAccount();
-    const mailer = nodemailer.createTransport({
-      host: testAccount.smtp.host,
-      port: testAccount.smtp.port,
-      secure: testAccount.smtp.secure,
-      auth: { user: testAccount.user, pass: testAccount.pass },
-      connectionTimeout: 10000,
-      greetingTimeout: 10000,
-      socketTimeout: 15000
-    });
-    const info = await mailer.sendMail({
-      from: "sender@example.com",
-      to: "recipient@example.com",
-      subject: "Test Ethereal on Render",
-      text: "Hello from Render",
-      html: "<p>Hello from Render</p>"
-    });
-    const previewUrl = nodemailer.getTestMessageUrl(info);
-    res.json({ success: true, messageId: info.messageId, previewUrl });
-  } catch (err: any) {
-    res.status(500).json({ error: err?.message || String(err), stack: err?.stack });
+  const ports = [2525, 587, 25];
+  const results: any[] = [];
+  for (const port of ports) {
+    try {
+      const testAccount = await nodemailer.createTestAccount();
+      const mailer = nodemailer.createTransport({
+        host: "smtp.ethereal.email",
+        port,
+        secure: false,
+        auth: { user: testAccount.user, pass: testAccount.pass },
+        connectionTimeout: 3000,
+        greetingTimeout: 3000,
+        socketTimeout: 3000
+      });
+      const info = await mailer.sendMail({
+        from: "sender@example.com",
+        to: "recipient@example.com",
+        subject: `Test Port ${port}`,
+        text: "hi"
+      });
+      const previewUrl = nodemailer.getTestMessageUrl(info);
+      results.push({ port, success: true, messageId: info.messageId, previewUrl });
+      res.json({ success: true, workingPort: port, previewUrl, results });
+      return;
+    } catch (e: any) {
+      results.push({ port, error: e.message });
+    }
   }
+  res.status(500).json({ success: false, results });
 });
 
 router.get("/", async (_req: Request, res: Response) => {
