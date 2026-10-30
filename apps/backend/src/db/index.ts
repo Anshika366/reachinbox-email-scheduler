@@ -1,11 +1,17 @@
 import { Pool, QueryResult, QueryResultRow } from "pg";
 import { config } from "../config/index.js";
 
+const isRemoteDb =
+  config.databaseUrl.includes("supabase.com") ||
+  config.databaseUrl.includes("render.com") ||
+  config.nodeEnv === "production";
+
 export const pool = new Pool({
   connectionString: config.databaseUrl,
+  ssl: isRemoteDb ? { rejectUnauthorized: false } : false,
   max: 20,
   idleTimeoutMillis: 30000,
-  connectionTimeoutMillis: 5000
+  connectionTimeoutMillis: 10000
 });
 
 export async function query<T extends QueryResultRow = any>(

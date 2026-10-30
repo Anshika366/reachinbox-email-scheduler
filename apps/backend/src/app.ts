@@ -29,7 +29,23 @@ app.use(helmet({
 }));
 
 app.use(cors({
-  origin: config.clientUrl,
+  origin: (origin, callback) => {
+    if (!origin) return callback(null, true);
+    
+    const cleanClientUrl = config.clientUrl.replace(/\/$/, "");
+    const cleanOrigin = origin.replace(/\/$/, "");
+
+    if (
+      cleanOrigin === cleanClientUrl ||
+      cleanOrigin.endsWith(".vercel.app") ||
+      cleanOrigin.includes("localhost") ||
+      cleanOrigin.includes("127.0.0.1")
+    ) {
+      return callback(null, true);
+    }
+    
+    return callback(new Error(`Not allowed by CORS: ${origin}`));
+  },
   credentials: true
 }));
 
