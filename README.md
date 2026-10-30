@@ -1,5 +1,20 @@
 # ReachInbox Full-Stack Email Scheduler
 
+<p align="center">
+  <img src="https://img.shields.io/badge/TypeScript-3178C6?style=for-the-badge&logo=typescript&logoColor=white" alt="TypeScript" />
+  <img src="https://img.shields.io/badge/Node.js-339933?style=for-the-badge&logo=nodedotjs&logoColor=white" alt="Node.js" />
+  <img src="https://img.shields.io/badge/Express-000000?style=for-the-badge&logo=express&logoColor=white" alt="Express" />
+  <img src="https://img.shields.io/badge/React-20232A?style=for-the-badge&logo=react&logoColor=61DAFB" alt="React" />
+  <img src="https://img.shields.io/badge/Vite-646CFF?style=for-the-badge&logo=vite&logoColor=white" alt="Vite" />
+  <img src="https://img.shields.io/badge/Tailwind_CSS-38B2AC?style=for-the-badge&logo=tailwind-css&logoColor=white" alt="Tailwind" />
+  <img src="https://img.shields.io/badge/PostgreSQL-316192?style=for-the-badge&logo=postgresql&logoColor=white" alt="PostgreSQL" />
+  <img src="https://img.shields.io/badge/Redis-DC382D?style=for-the-badge&logo=redis&logoColor=white" alt="Redis" />
+  <img src="https://img.shields.io/badge/BullMQ-E74C3C?style=for-the-badge&logo=redis&logoColor=white" alt="BullMQ" />
+  <img src="https://img.shields.io/badge/Elasticsearch-005571?style=for-the-badge&logo=elasticsearch&logoColor=white" alt="Elasticsearch" />
+  <img src="https://img.shields.io/badge/Docker-2496ED?style=for-the-badge&logo=docker&logoColor=white" alt="Docker" />
+  <img src="https://img.shields.io/badge/Jest-C21325?style=for-the-badge&logo=jest&logoColor=white" alt="Jest" />
+</p>
+
 A distributed, production-grade email scheduling platform engineered for the ReachInbox Software Development Intern hiring assignment. Built with Node.js, Express, TypeScript, PostgreSQL, BullMQ, Redis, Elasticsearch, and Ethereal SMTP (Nodemailer), accompanied by a React + Vite frontend matching the Outbox Labs Figma design specifications.
 
 ---
@@ -23,7 +38,7 @@ A distributed, production-grade email scheduling platform engineered for the Rea
 15. [Project Structure](#15-project-structure)
 16. [Security Architecture](#16-security-architecture)
 17. [Known Limitations and Trade-offs](#17-known-limitations-and-trade-offs)
-18. [License and Contribution](#20-license-and-contribution)
+18. [License and Contribution](#18-license-and-contribution)
 
 ---
 
@@ -60,17 +75,17 @@ This platform provides:
 
 | Component | Technology | Version | Purpose |
 | :--- | :--- | :--- | :--- |
-| **Backend Framework** | Node.js / Express | Node v20+, Express 4.21 | REST API, route controllers, session handling |
-| **Language** | TypeScript | v5.7.3 | End-to-end static typing across workspaces |
-| **Relational Database** | PostgreSQL | v16 | Primary ACID source of truth for email states |
-| **Queue & Worker Engine** | BullMQ | v5.41.0 | Persistent delayed job queueing and background workers |
-| **In-Memory Store** | Redis | v7 (AOF enabled) | Queue storage, atomic Lua rate limiters, pacing locks |
-| **Search Engine** | Elasticsearch | v8.17.0 | Full-text email document search and multi-field matching |
-| **Email Transport** | Nodemailer | v6.10.0 | RFC 5321 SMTP transport to Ethereal relay |
-| **Frontend Framework** | React / Vite | React 18.3, Vite 6.1 | Single-page application matching Figma specification |
-| **Styling** | Tailwind CSS | v3.4.17 | Modern responsive UI matching Outbox Labs design |
-| **Icons** | Lucide React | v0.475.0 | Design-system aligned iconography |
-| **Testing** | Jest / Supertest | Jest 29.7, Supertest 7.0 | Automated unit and integration testing |
+| **Backend Framework** | ![Node.js](https://img.shields.io/badge/Node.js-339933?style=flat-square&logo=nodedotjs&logoColor=white) ![Express](https://img.shields.io/badge/Express-000000?style=flat-square&logo=express&logoColor=white) | Node v20+, Express 4.21 | REST API, route controllers, session handling |
+| **Language** | ![TypeScript](https://img.shields.io/badge/TypeScript-3178C6?style=flat-square&logo=typescript&logoColor=white) | v5.7.3 | End-to-end static typing across workspaces |
+| **Relational Database** | ![PostgreSQL](https://img.shields.io/badge/PostgreSQL-316192?style=flat-square&logo=postgresql&logoColor=white) | v16 | Primary ACID source of truth for email states |
+| **Queue & Worker Engine** | ![BullMQ](https://img.shields.io/badge/BullMQ-E74C3C?style=flat-square&logo=redis&logoColor=white) | v5.41.0 | Persistent delayed job queueing and background workers |
+| **In-Memory Store** | ![Redis](https://img.shields.io/badge/Redis-DC382D?style=flat-square&logo=redis&logoColor=white) | v7 (AOF enabled) | Queue storage, atomic Lua rate limiters, pacing locks |
+| **Search Engine** | ![Elasticsearch](https://img.shields.io/badge/Elasticsearch-005571?style=flat-square&logo=elasticsearch&logoColor=white) | v8.17.0 | Full-text email document search and multi-field matching |
+| **Email Transport** | ![Nodemailer](https://img.shields.io/badge/Nodemailer-00A86B?style=flat-square&logo=gmail&logoColor=white) | v6.10.0 | RFC 5321 SMTP transport to Ethereal relay |
+| **Frontend Framework** | ![React](https://img.shields.io/badge/React-20232A?style=flat-square&logo=react&logoColor=61DAFB) ![Vite](https://img.shields.io/badge/Vite-646CFF?style=flat-square&logo=vite&logoColor=white) | React 18.3, Vite 6.1 | Single-page application matching Figma specification |
+| **Styling** | ![Tailwind CSS](https://img.shields.io/badge/Tailwind_CSS-38B2AC?style=flat-square&logo=tailwind-css&logoColor=white) | v3.4.17 | Modern responsive UI matching Outbox Labs design |
+| **Icons** | ![Lucide](https://img.shields.io/badge/Lucide_React-F56565?style=flat-square&logo=feather&logoColor=white) | v0.475.0 | Design-system aligned iconography |
+| **Testing** | ![Jest](https://img.shields.io/badge/Jest-C21325?style=flat-square&logo=jest&logoColor=white) ![Supertest](https://img.shields.io/badge/Supertest-4B5563?style=flat-square&logo=npm&logoColor=white) | Jest 29.7, Supertest 7.0 | Automated unit and integration testing |
 
 ---
 
