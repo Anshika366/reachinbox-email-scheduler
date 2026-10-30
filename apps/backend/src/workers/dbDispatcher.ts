@@ -29,7 +29,14 @@ export function startDatabaseEmailDispatcher(): void {
            AND updated_at >= NOW() - INTERVAL '12 hours'`
       );
 
-      // 3. Process up to 5 due scheduled emails in this tick
+      // 3. Migrate any legacy generic preview URLs to direct public preview URLs
+      await query(
+        `UPDATE emails
+         SET preview_url = 'https://reachinbox-email-scheduler-csri.onrender.com/api/emails/preview/' || id
+         WHERE (preview_url = 'https://ethereal.email/messages' OR preview_url IS NULL) AND status = 'sent'`
+      );
+
+      // 4. Process up to 5 due scheduled emails in this tick
       for (let i = 0; i < 5; i++) {
         const res = await query<EmailRecord>(
           `UPDATE emails
@@ -58,7 +65,10 @@ export function startDatabaseEmailDispatcher(): void {
             html: email.body
           });
 
-          const previewUrl = sendResult.previewUrl ? sendResult.previewUrl : null;
+          const directPreviewUrl = `https://reachinbox-email-scheduler-csri.onrender.com/api/emails/preview/${email.id}`;
+          const previewUrl = sendResult.previewUrl && sendResult.previewUrl.includes("/message/")
+            ? sendResult.previewUrl
+            : directPreviewUrl;
           const sentAt = new Date();
 
           await query(
