@@ -1,8 +1,10 @@
 import axios from "axios";
 import { User, Sender, EmailRecord, SlackStatus } from "../types";
 
+const API_BASE_URL = ((import.meta as any).env?.VITE_API_URL as string) || "http://localhost:4000/api";
+
 const api = axios.create({
-  baseURL: "http://localhost:4000/api",
+  baseURL: API_BASE_URL,
   withCredentials: true
 });
 

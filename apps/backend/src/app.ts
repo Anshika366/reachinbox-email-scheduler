@@ -18,6 +18,12 @@ import healthRoutes from "./routes/healthRoutes.js";
 
 export const app = express();
 
+const isProduction = config.nodeEnv === "production";
+
+if (isProduction) {
+  app.set("trust proxy", 1);
+}
+
 app.use(helmet({
   contentSecurityPolicy: false
 }));
@@ -38,8 +44,8 @@ app.use(
     saveUninitialized: false,
     cookie: {
       httpOnly: true,
-      secure: config.nodeEnv === "production",
-      sameSite: "lax",
+      secure: isProduction,
+      sameSite: isProduction ? "none" : "lax",
       maxAge: 7 * 24 * 60 * 60 * 1000
     }
   })
