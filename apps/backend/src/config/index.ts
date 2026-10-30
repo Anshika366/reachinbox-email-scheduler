@@ -16,10 +16,24 @@ for (const envFile of candidateEnvFiles) {
 }
 dotenv.config();
 
+const isProd = process.env.NODE_ENV === "production" || !!process.env.RENDER || !!process.env.RENDER_EXTERNAL_URL;
+
+const resolvedClientUrl = process.env.CLIENT_URL && !process.env.CLIENT_URL.includes("localhost")
+  ? process.env.CLIENT_URL
+  : (isProd ? "https://reachinbox-email-scheduler-eosin.vercel.app" : (process.env.CLIENT_URL || "http://localhost:5173"));
+
+const resolvedGoogleCallbackUrl = process.env.GOOGLE_CALLBACK_URL && !process.env.GOOGLE_CALLBACK_URL.includes("localhost")
+  ? process.env.GOOGLE_CALLBACK_URL
+  : (isProd ? "https://reachinbox-email-scheduler-csri.onrender.com/api/auth/google/callback" : (process.env.GOOGLE_CALLBACK_URL || "http://localhost:4000/api/auth/google/callback"));
+
+const resolvedSlackRedirectUri = process.env.SLACK_REDIRECT_URI && !process.env.SLACK_REDIRECT_URI.includes("localhost")
+  ? process.env.SLACK_REDIRECT_URI
+  : (isProd ? "https://reachinbox-email-scheduler-csri.onrender.com/api/integrations/slack/callback" : (process.env.SLACK_REDIRECT_URI || "http://localhost:4000/api/integrations/slack/callback"));
+
 export const config = {
   port: parseInt(process.env.PORT || "4000", 10),
-  nodeEnv: process.env.NODE_ENV || "development",
-  clientUrl: process.env.CLIENT_URL || "http://localhost:5173",
+  nodeEnv: process.env.NODE_ENV || (process.env.RENDER ? "production" : "development"),
+  clientUrl: resolvedClientUrl,
   databaseUrl: process.env.DATABASE_URL || "postgres://postgres@localhost:5433/reachinbox_scheduler",
   redisUrl: process.env.REDIS_URL || "redis://localhost:6379",
   elasticsearchUrl: process.env.ELASTICSEARCH_URL || "http://localhost:9200",
@@ -35,13 +49,13 @@ export const config = {
   google: {
     clientId: process.env.GOOGLE_CLIENT_ID || "",
     clientSecret: process.env.GOOGLE_CLIENT_SECRET || "",
-    callbackUrl: process.env.GOOGLE_CALLBACK_URL || "http://localhost:4000/api/auth/google/callback"
+    callbackUrl: resolvedGoogleCallbackUrl
   },
   sessionSecret: process.env.SESSION_SECRET || "reachinbox_secret_session_key_1234567890",
   slack: {
     clientId: process.env.SLACK_CLIENT_ID || "",
     clientSecret: process.env.SLACK_CLIENT_SECRET || "",
-    redirectUri: process.env.SLACK_REDIRECT_URI || "http://localhost:4000/api/integrations/slack/callback",
+    redirectUri: resolvedSlackRedirectUri,
     encryptionKey: process.env.SLACK_ENCRYPTION_KEY || "reachinbox_slack_encryption_key_32bytes_min"
   },
   bullBoard: {
