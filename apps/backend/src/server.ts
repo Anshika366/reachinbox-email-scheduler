@@ -5,6 +5,7 @@ import { initElasticsearchIndex } from "./services/elasticsearchService.js";
 import { getEmailTransporter } from "./services/emailService.js";
 import { reconcileScheduledJobs } from "./queues/emailQueue.js";
 import { createEmailWorker } from "./workers/emailWorker.js";
+import { startDatabaseEmailDispatcher } from "./workers/dbDispatcher.js";
 
 async function bootstrap() {
   // Start HTTP server immediately so Render port binding & health checks succeed
@@ -19,6 +20,9 @@ async function bootstrap() {
     console.log("Running database migrations...");
     await runMigrations();
     console.log("Database migrations completed successfully.");
+
+    // Always start reliable database fallback dispatcher
+    startDatabaseEmailDispatcher();
 
     await initElasticsearchIndex();
     await getEmailTransporter();

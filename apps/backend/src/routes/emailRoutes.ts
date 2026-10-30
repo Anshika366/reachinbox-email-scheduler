@@ -91,24 +91,35 @@ router.post("/schedule", async (req: Request, res: Response, next) => {
 
     const emailRecord = emailRes.rows[0];
 
-    const jobId = await addEmailToQueue(
-      {
-        emailId,
-        userId,
-        senderId: sender.id,
-        senderEmail: sender.email,
-        recipient,
-        subject,
-        body,
-        scheduledAt: recipientScheduledAt.toISOString(),
-        minDelayMs,
-        hourlyLimit,
-        idempotencyKey: emailRecord.idempotency_key || undefined
-      },
-      recipientScheduledTimeMs
-    );
+    try {
+      const queueTimeout = new Promise<string>((_, reject) =>
+        setTimeout(() => reject(new Error("Queue timeout")), 1500)
+      );
+      const jobId = await Promise.race([
+        addEmailToQueue(
+          {
+            emailId,
+            userId,
+            senderId: sender.id,
+            senderEmail: sender.email,
+            recipient,
+            subject,
+            body,
+            scheduledAt: recipientScheduledAt.toISOString(),
+            minDelayMs,
+            hourlyLimit,
+            idempotencyKey: emailRecord.idempotency_key || undefined
+          },
+          recipientScheduledTimeMs
+        ),
+        queueTimeout
+      ]);
 
-    await query("UPDATE emails SET bullmq_job_id = $1 WHERE id = $2", [jobId, emailId]);
+      await query("UPDATE emails SET bullmq_job_id = $1 WHERE id = $2", [jobId, emailId]);
+    } catch (qErr: any) {
+      console.warn("Queue notice (database dispatcher will handle delivery):", qErr?.message);
+    }
+
     await indexEmailDocument(emailRecord);
     createdEmailIds.push(emailId);
   }
