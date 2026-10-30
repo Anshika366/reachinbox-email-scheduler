@@ -23,9 +23,7 @@ A distributed, production-grade email scheduling platform engineered for the Rea
 15. [Project Structure](#15-project-structure)
 16. [Security Architecture](#16-security-architecture)
 17. [Known Limitations and Trade-offs](#17-known-limitations-and-trade-offs)
-18. [Reviewer Demo Guide](#18-reviewer-demo-guide)
-19. [Assignment Requirement Checklist](#19-assignment-requirement-checklist)
-20. [License and Contribution](#20-license-and-contribution)
+18. [License and Contribution](#20-license-and-contribution)
 
 ---
 
@@ -458,53 +456,6 @@ reachinbox-scheduler/
 
 ---
 
-## 18. Reviewer Demo Guide (5-Minute Walkthrough)
-
-1. **Dashboard & Figma Visual Alignment (0:00 - 1:00)**:
-   - Access `http://localhost:5173/`.
-   - Highlight visual alignment with Figma: user profile, sidebar navigation, Scheduled/Sent tabs, and compose button.
-2. **Campaign Composition & CSV Recipient Import (1:00 - 2:00)**:
-   - Open **Compose New Email**.
-   - Upload a CSV of recipient addresses. Point out real-time format validation and recipient counts.
-   - Configure send delay (e.g. 2 sec), hourly limit, and schedule for future execution.
-3. **Bull Board Queue Monitoring (2:00 - 3:00)**:
-   - Open `http://localhost:4000/admin/queues` (login with Basic Auth).
-   - Show the delayed BullMQ jobs waiting for their scheduled timestamp.
-4. **Sent List & Ethereal SMTP Previews (3:00 - 3:45)**:
-   - Switch to the **Sent** tab.
-   - Click **View in Ethereal** on a sent email to inspect the rendered message in the Ethereal inbox.
-5. **Rate Limiting, Slack Alert & Recovery (3:45 - 5:00)**:
-   - Trigger rate-limit rescheduling and show the alert posted in the Slack `#all-reachinbox-testing` channel.
-   - Restart the backend to demonstrate that pending jobs remain safely preserved.
-
----
-
-## 19. Assignment Requirement Checklist
-
-| Requirement | Implementation / Test File | Status | Notes |
-| :--- | :--- | :--- | :--- |
-| **TypeScript + Express Backend** | [`apps/backend/src/server.ts`](apps/backend/src/server.ts) | **PASS** | Verified with `tsc` build and runtime execution. |
-| **PostgreSQL Persistence & Schema** | [`apps/backend/src/db/migrate.ts`](apps/backend/src/db/migrate.ts) | **PASS** | Verified tables, constraints, foreign keys, and indexes. |
-| **BullMQ & Redis (Zero Cron Jobs)** | [`apps/backend/src/queues/emailQueue.ts`](apps/backend/src/queues/emailQueue.ts) | **PASS** | Grep confirms 0 cron dependencies; uses BullMQ delayed jobs. |
-| **Configurable Worker Concurrency** | [`apps/backend/src/workers/emailWorker.ts`](apps/backend/src/workers/emailWorker.ts) | **PASS** | Verified `WORKER_CONCURRENCY` applied to BullMQ Worker. |
-| **Sender Pacing (Minimum Delay)** | [`apps/backend/src/services/redisService.ts`](apps/backend/src/services/redisService.ts) | **PASS** | Atomic Redis Lua script coordinates slot reservation across workers. |
-| **Hourly Rate Limiting & Rescheduling** | [`apps/backend/src/workers/emailWorker.ts`](apps/backend/src/workers/emailWorker.ts) | **PASS** | Atomic Lua script tracks fixed hourly window buckets and reschedules over-quota jobs to next hour. |
-| **Slack Rate-Limit Notifications** | [`apps/backend/src/services/slackService.ts`](apps/backend/src/services/slackService.ts) | **PASS** | Live alert posted to `#all-reachinbox-testing` with deduplication. |
-| **Ethereal SMTP Relay & Previews** | [`apps/backend/src/services/emailService.ts`](apps/backend/src/services/emailService.ts) | **PASS** | Captures real Message-ID and Ethereal preview URLs. |
-| **Elasticsearch Full-Text Search** | [`apps/backend/src/services/elasticsearchService.ts`](apps/backend/src/services/elasticsearchService.ts) | **PASS** | Multi-match querying with tenant isolation and DB fallback. |
-| **React + Tailwind Frontend (Figma Matched)** | [`apps/frontend/src/App.tsx`](apps/frontend/src/App.tsx) | **PASS** | Verified components, typography, badges, and layout. |
-| **CSV / Text Recipient Import** | [`apps/frontend/src/components/ComposeModal.tsx`](apps/frontend/src/components/ComposeModal.tsx) | **PASS** | CSV parsing with email deduplication and format validation. |
-| **Sent & Failed Display in Sent View** | [`apps/frontend/src/components/SentList.tsx`](apps/frontend/src/components/SentList.tsx) | **PASS** | Renders both Sent and Failed badges with delivery notices. |
-| **Google OAuth Authentication** | [`apps/backend/src/routes/authRoutes.ts`](apps/backend/src/routes/authRoutes.ts) | **PASS** | Authorization-code flow, profile retrieval, and session cookie. |
-| **Protected Bull Board Dashboard** | [`apps/backend/src/app.ts`](apps/backend/src/app.ts) | **PASS** | HTTP Basic Auth required; rejects weak passwords. |
-| **Strict No-Duplicate External Delivery** | [`apps/backend/src/queues/emailQueue.ts`](apps/backend/src/queues/emailQueue.ts) | **PARTIAL** | Automated recovery is fail-closed (at-most-once); raw SMTP lacks 2PC, so external exactly-once delivery across crashes is technically impossible. |
-| **Private GitHub Remote & Code Push** | Local repository (`master` branch) | **PARTIAL** | All changes committed locally; remote origin URL pending setup. |
-| **Reviewer Access (`Mitrajit`, `Yadav036`)** | GitHub repository settings | **NOT VERIFIED** | Pending repository invitation on GitHub. |
-| **5-Minute Walkthrough Demo Video** | Video link (Loom / Drive) | **NOT VERIFIED** | To be recorded and linked by candidate prior to submission. |
-| **ClickUp Assignment Submission Form** | ReachInbox submission link | **NOT VERIFIED** | To be submitted by candidate prior to deadline. |
-
----
-
-## 20. License and Contribution
+## 18. License and Contribution
 
 This project was developed exclusively as a private evaluation assignment for the ReachInbox hiring process. It does not carry an open-source software license. All rights are reserved by the author.
