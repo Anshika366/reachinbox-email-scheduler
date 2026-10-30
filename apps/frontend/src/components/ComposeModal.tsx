@@ -138,8 +138,8 @@ export const ComposeModal: React.FC<ComposeModalProps> = ({
     }
 
     const parsedScheduledTime = new Date(scheduledDateTime).getTime();
-    if (isNaN(parsedScheduledTime) || parsedScheduledTime < Date.now() - 60000) {
-      setErrorMessage("Scheduled time cannot be in the past");
+    if (isNaN(parsedScheduledTime)) {
+      setErrorMessage("Please select a valid scheduled date & time");
       return;
     }
 
@@ -164,7 +164,8 @@ export const ComposeModal: React.FC<ComposeModalProps> = ({
       onCampaignCreated();
       onClose();
     } catch (err: any) {
-      const msg = err.response?.data?.error || "Failed to schedule email campaign";
+      const detailsMsg = err.response?.data?.details?.[0]?.message;
+      const msg = detailsMsg || err.response?.data?.error || "Failed to schedule email campaign";
       setErrorMessage(msg);
       setIsSubmitting(false);
     }

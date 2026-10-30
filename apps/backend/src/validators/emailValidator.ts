@@ -7,8 +7,8 @@ export const scheduleEmailSchema = z.object({
   body: z.string().min(1, "Body is required"),
   scheduledAt: z.string().refine((val) => {
     const ts = Date.parse(val);
-    return !isNaN(ts) && ts >= Date.now() - 60000;
-  }, "Scheduled time must be a valid current or future date"),
+    return !isNaN(ts);
+  }, "Scheduled time must be a valid date"),
   minDelayMs: z.number().int().nonnegative().optional(),
   hourlyLimit: z.number().int().positive().optional(),
   idempotencyKey: z.string().optional()
