@@ -12,7 +12,7 @@ router.get("/", async (_req: Request, res: Response) => {
     checkElasticsearchConnection()
   ]);
 
-  const healthy = dbOk && redisOk;
+  const healthy = dbOk;
 
   const payload = {
     status: healthy ? "healthy" : "degraded",
