@@ -6,7 +6,7 @@ import { SentList } from "../components/SentList";
 import { ThreadDetail } from "../components/ThreadDetail";
 import { ComposeModal } from "../components/ComposeModal";
 import { User, Sender, EmailRecord, SlackStatus } from "../types";
-import { emailApi, senderApi, slackApi } from "../services/api";
+import { emailApi, senderApi, slackApi, API_BASE_URL } from "../services/api";
 
 interface DashboardPageProps {
   user: User;
@@ -53,6 +53,22 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ user, onLogout }) 
       setIsRefreshing(false);
     }
   }, []);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const slackConnected = params.get("slack_connected");
+    const slackError = params.get("slack_error");
+    if (slackConnected === "true") {
+      alert("Slack connected successfully! You will now receive rate-limit and delivery notifications.");
+      fetchData();
+      window.history.replaceState({}, document.title, window.location.pathname);
+    } else if (slackError) {
+      if (slackError !== "cancelled") {
+        alert(`Slack integration notice: ${slackError}`);
+      }
+      window.history.replaceState({}, document.title, window.location.pathname);
+    }
+  }, [fetchData]);
 
   const pollActiveTab = useCallback(async () => {
     try {
@@ -104,9 +120,13 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ user, onLogout }) 
   const handleConnectSlack = async () => {
     try {
       const url = await slackApi.getAuthUrl();
-      window.location.href = url;
+      if (url) {
+        window.location.href = url;
+        return;
+      }
+      throw new Error("No auth URL returned");
     } catch {
-      alert("Unable to generate Slack authorization URL. Ensure Slack credentials are set.");
+      window.location.href = `${API_BASE_URL}/integrations/slack/connect?userId=${encodeURIComponent(user.id)}`;
     }
   };
 

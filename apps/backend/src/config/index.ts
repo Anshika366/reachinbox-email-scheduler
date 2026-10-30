@@ -53,8 +53,8 @@ export const config = {
   },
   sessionSecret: process.env.SESSION_SECRET || "reachinbox_secret_session_key_1234567890",
   slack: {
-    clientId: process.env.SLACK_CLIENT_ID || "",
-    clientSecret: process.env.SLACK_CLIENT_SECRET || "",
+    clientId: process.env.SLACK_CLIENT_ID || "12447532971649.12474034335824",
+    clientSecret: process.env.SLACK_CLIENT_SECRET || "20a592e0e404a1f8878be87ea680968f",
     redirectUri: resolvedSlackRedirectUri,
     encryptionKey: process.env.SLACK_ENCRYPTION_KEY || "reachinbox_slack_encryption_key_32bytes_min"
   },
