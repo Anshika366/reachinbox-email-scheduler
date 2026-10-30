@@ -54,20 +54,23 @@ This platform provides:
 
 ---
 
-## 2. Features
+## 2. Features Implemented (Requirement Mapping)
 
-### Core Implemented Capabilities
-- **Google OAuth 2.0 & Session Management**: Real OAuth authorization-code flow, secure HTTP-only cookies, user profile display, and session-clearing logout.
-- **Campaign Composer & Recipient Import**: Rich HTML/text composer supporting multi-recipient input and bulk CSV/text uploads with email deduplication and format validation.
-- **Configurable Scheduling & Timing Presets**: Schedule campaigns for any future UTC timestamp or quick presets ("Tomorrow 10:00 AM").
-- **Sender Pacing (`MIN_DELAY_MS`)**: Enforces non-overlapping, sequential send slots per sender across concurrent workers using atomic Redis locks.
-- **Hourly Rate Limiting & Auto-Rescheduling**: Fixed hourly window bucket quotas per sender. Over-limit emails are automatically rescheduled into the next hour window rather than dropped.
-- **Scheduled & Sent Views**: Dedicated views tracking emails in `scheduled`, `processing`, `sent`, and `failed` states.
-- **Delivery Uncertainty Notices**: Interrupted emails surface an explicit delivery uncertainty warning in the UI to prevent blind operator retries.
-- **Slack Alerting**: Dispatches automated alerts to connected Slack channels when a sender reaches an hourly quota, with window-based deduplication.
-- **Ethereal SMTP Relay**: Nodemailer SMTP delivery with direct web preview links for inspection.
-- **Protected Bull Board**: Real-time queue metrics and job management guarded by HTTP Basic Authentication.
-- **Elasticsearch Full-Text Search**: Instant search across recipient, subject, body, and sender fields with strict tenant isolation.
+### Backend Features
+- **Scheduler**: Persistent temporal dispatching powered by BullMQ delayed jobs (`addEmailToQueue`) backed by Redis. Strict adherence to non-cron scheduling (0 cron dependencies).
+- **Persistence & Crash Recovery**: PostgreSQL ACID relational source of truth (`emails` table). On bootstrap, `reconcileScheduledJobs()` scans for un-sent scheduled emails and reconstructs missing BullMQ jobs without duplicate transmissions.
+- **Rate Limiting**: Configurable fixed hourly window bucket limits per sender (`MAX_EMAILS_PER_HOUR_PER_SENDER`) enforced across distributed workers via atomic Redis Lua scripts (`checkAndIncrementHourlyRateLimit`). Over-quota emails are rescheduled into the next hour window rather than dropped. Live Slack alerting triggers when hourly quotas are hit with deduplication.
+- **Concurrency & Pacing**: Configurable BullMQ worker fleet (`WORKER_CONCURRENCY`). Cross-worker sender pacing (`MIN_DELAY_MS`) guarantees non-overlapping send slots per sender via atomic Redis Lua locks (`acquireSenderSendSlot`).
+- **Search & Inspection**: Full-text multi-field search via Elasticsearch (`/api/emails/search`) with PostgreSQL fallback; web-accessible Bull Board queue monitoring (`/admin/queues`) protected by HTTP Basic Auth.
+- **Ethereal SMTP Relay**: Nodemailer SMTP delivery with real Message-ID capture and direct web preview links for inspection.
+
+### Frontend Features (Outbox Labs Figma Matched)
+- **Login**: Real Google OAuth 2.0 authorization-code flow (`/api/auth/google`) with HTTP-only session cookies (`connect.sid`), user profile display, and secure logout. Also includes instant email/password development authentication.
+- **Dashboard**: Figma-aligned interface with top user profile header (name, email, avatar), sidebar navigation, dynamic counts, and logout trigger.
+- **Compose**: Rich HTML/text email composer, bulk CSV/text lead upload with format validation and live recipient count detection, scheduling presets ("Tomorrow 10:00 AM" or custom UTC timestamp), send delay configuration, and hourly limit overrides.
+- **Tables (Scheduled & Sent)**:
+  - **Scheduled Emails Table**: Displays recipient, subject, scheduled time, and status (`scheduled`, `processing`) with loading skeletons and empty states.
+  - **Sent Emails Table**: Displays recipient, subject, sent time, status (`sent`, `failed`), delivery uncertainty notices, and direct **"View in Ethereal"** preview links with loading skeletons and empty states.
 
 ---
 
