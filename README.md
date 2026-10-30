@@ -88,9 +88,9 @@ flowchart TD
     end
 
     subgraph Storage["Persistence & Queues"]
-        PG[("PostgreSQL\n(Source of Truth)")]
-        RedisQueue[("Redis 7 (AOF)\nBullMQ Delayed Queue")]
-        ES[("Elasticsearch 8\nFull-Text Search")]
+        PG[("PostgreSQL - Source of Truth")]
+        RedisQueue[("Redis 7 - BullMQ Delayed Queue")]
+        ES[("Elasticsearch 8 - Full-Text Search")]
     end
 
     subgraph Workers["Async Worker Fleet"]
@@ -105,25 +105,25 @@ flowchart TD
         SlackAPI["Slack Web API"]
     end
 
-    UI -->|REST / JSON| Router
-    UI <-->|OAuth Redirection| GoogleAuth
-    Router -->|Check / Create Session| AuthMe
-    Router -->|1. Insert Record (scheduled)| PG
-    Router -->|2. Enqueue Delayed Job| RedisQueue
-    Router -->|3. Index Document| ES
+    UI -->|"REST / JSON"| Router
+    UI <-->|"OAuth Redirection"| GoogleAuth
+    Router -->|"Check / Create Session"| AuthMe
+    Router -->|"1. Insert Record (scheduled)"| PG
+    Router -->|"2. Enqueue Delayed Job"| RedisQueue
+    Router -->|"3. Index Document"| ES
 
-    RedisQueue -->|Pop Due Jobs| Worker
-    Worker -->|Query State Guard| PG
-    Worker -->|Check / Acquire Slot| Pacing
-    Worker -->|Check / Increment Quota| RateLimit
+    RedisQueue -->|"Pop Due Jobs"| Worker
+    Worker -->|"Query State Guard"| PG
+    Worker -->|"Check / Acquire Slot"| Pacing
+    Worker -->|"Check / Increment Quota"| RateLimit
 
-    RateLimit -->|If Over Quota: Reschedule| RedisQueue
-    RateLimit -->|Deduplicated Alert| SlackAPI
+    RateLimit -->|"If Over Quota: Reschedule"| RedisQueue
+    RateLimit -->|"Deduplicated Alert"| SlackAPI
 
-    Pacing -->|Wait Slot & Dispatch| SMTPRelay
-    SMTPRelay -->|Return Message-ID| Worker
-    Worker -->|Update Status (sent/failed)| PG
-    Worker -->|Update Status| ES
+    Pacing -->|"Wait Slot & Dispatch"| SMTPRelay
+    SMTPRelay -->|"Return Message-ID"| Worker
+    Worker -->|"Update Status (sent/failed)"| PG
+    Worker -->|"Update Status"| ES
 ```
 
 ### Source of Truth Architecture
