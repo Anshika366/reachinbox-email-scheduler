@@ -1,7 +1,22 @@
 import axios from "axios";
 import { User, Sender, EmailRecord, SlackStatus } from "../types";
 
-const API_BASE_URL = ((import.meta as any).env?.VITE_API_URL as string) || "http://localhost:4000/api";
+function getApiBaseUrl(): string {
+  const envUrl = ((import.meta as any).env?.VITE_API_URL as string) || "";
+  if (!envUrl || envUrl.includes("reachinbox-backend.onrender.com")) {
+    if (
+      typeof window !== "undefined" &&
+      !window.location.hostname.includes("localhost") &&
+      !window.location.hostname.includes("127.0.0.1")
+    ) {
+      return "https://reachinbox-email-scheduler-csri.onrender.com/api";
+    }
+    return "http://localhost:4000/api";
+  }
+  return envUrl;
+}
+
+const API_BASE_URL = getApiBaseUrl();
 
 const api = axios.create({
   baseURL: API_BASE_URL,
