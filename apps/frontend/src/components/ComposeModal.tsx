@@ -147,7 +147,9 @@ export const ComposeModal: React.FC<ComposeModalProps> = ({
     setErrorMessage(null);
 
     try {
-      const scheduledAtIso = new Date(scheduledDateTime).toISOString();
+      const scheduledAtIso = showSendLater
+        ? new Date(scheduledDateTime).toISOString()
+        : new Date().toISOString();
       const idempotencyKey = `camp-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
 
       await emailApi.scheduleCampaign({
