@@ -97,10 +97,7 @@ export function createEmailWorker(): Worker<EmailJobData> {
           html: data.body
         });
 
-        const directPreviewUrl = `https://reachinbox-email-scheduler-csri.onrender.com/api/emails/preview/${data.emailId}`;
-        const previewUrl = sendResult.previewUrl && sendResult.previewUrl.includes("/message/")
-          ? sendResult.previewUrl
-          : directPreviewUrl;
+        const previewUrl = sendResult.previewUrl ? sendResult.previewUrl : null;
         const sentAt = new Date();
 
         await query(

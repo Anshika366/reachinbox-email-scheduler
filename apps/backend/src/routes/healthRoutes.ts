@@ -8,24 +8,22 @@ import nodemailer from "nodemailer";
 const router = Router();
 
 router.get("/test-ethereal", async (_req: Request, res: Response) => {
-  const net = await import("net");
   try {
-    const socket = net.connect(587, "smtp.ethereal.email", () => {
-      socket.once("data", (data) => {
-        res.json({ port587: "CONNECTED!", banner: data.toString().trim() });
-        socket.end();
-      });
+    const { sendEmailViaSmtp } = await import("../services/emailService.js");
+    const testResult = await sendEmailViaSmtp({
+      from: "diagnostic@example.com",
+      to: "recipient@example.com",
+      subject: `Ethereal Verification ${Date.now()}`,
+      html: "<p>Ethereal live preview verification test</p>"
     });
-    socket.on("error", (err) => {
-      res.json({ port587: "ERROR", message: err.message });
+    res.json({
+      success: true,
+      messageId: testResult.messageId,
+      previewUrl: testResult.previewUrl,
+      isExactPreviewUrl: !!(testResult.previewUrl && testResult.previewUrl.includes("/message/"))
     });
-    socket.on("timeout", () => {
-      res.json({ port587: "TIMEOUT" });
-      socket.destroy();
-    });
-    socket.setTimeout(6000);
-  } catch (e: any) {
-    res.status(500).json({ error: e.message });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err?.message || String(err) });
   }
 });
 

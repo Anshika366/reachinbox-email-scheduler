@@ -1,8 +1,9 @@
 import nodemailer, { Transporter } from "nodemailer";
-import crypto from "crypto";
+import axios from "axios";
 import { config } from "../config/index.js";
 
 let transporter: Transporter | null = null;
+let dynamicTestAccount: { user: string; pass: string } | null = null;
 
 export async function getEmailTransporter(): Promise<Transporter> {
   if (transporter) {
@@ -13,16 +14,18 @@ export async function getEmailTransporter(): Promise<Transporter> {
   let pass = config.ethereal.pass;
 
   if (!user || !pass) {
-    try {
-      const testAccount = await Promise.race([
-        nodemailer.createTestAccount(),
-        new Promise<never>((_, reject) => setTimeout(() => reject(new Error("Timeout creating Ethereal test account")), 3500))
-      ]);
-      user = testAccount.user;
-      pass = testAccount.pass;
-    } catch {
-      user = "dev.scheduler@ethereal.email";
-      pass = "DevSchedulerSecure2026!";
+    if (!dynamicTestAccount) {
+      try {
+        console.log("[EmailService] No static Ethereal credentials found. Creating dynamic test account...");
+        dynamicTestAccount = await nodemailer.createTestAccount();
+        console.log(`[EmailService] Dynamic Ethereal test account created: ${dynamicTestAccount.user}`);
+      } catch (err: any) {
+        console.error("[EmailService] Error creating dynamic Ethereal test account:", err?.message || err);
+      }
+    }
+    if (dynamicTestAccount) {
+      user = dynamicTestAccount.user;
+      pass = dynamicTestAccount.pass;
     }
   }
 
@@ -31,12 +34,12 @@ export async function getEmailTransporter(): Promise<Transporter> {
     port: config.ethereal.port,
     secure: false,
     auth: {
-      user,
-      pass
+      user: user || "test@ethereal.email",
+      pass: pass || "testpassword"
     },
-    connectionTimeout: 4000,
-    greetingTimeout: 4000,
-    socketTimeout: 5000
+    connectionTimeout: 8000,
+    greetingTimeout: 8000,
+    socketTimeout: 12000
   });
 
   return transporter;
@@ -55,6 +58,7 @@ export async function sendEmailViaSmtp(options: {
 
   const plainText = options.html.replace(/<[^>]+>/g, " ");
 
+  // 1. Primary Attempt: Direct SMTP dispatch via Nodemailer
   try {
     const mailer = await getEmailTransporter();
     const info = await mailer.sendMail({
@@ -71,17 +75,53 @@ export async function sendEmailViaSmtp(options: {
       messageId: info.messageId,
       previewUrl: previewUrl || false
     };
-  } catch (err: any) {
-    const errMsg = err?.message || String(err);
-    console.warn(`[EmailService] SMTP send notice (${errMsg}). Using cloud delivery fallback.`);
+  } catch (directErr: any) {
+    const errMsg = directErr?.message || String(directErr);
+    console.warn(`[EmailService] Direct SMTP attempt notice (${errMsg}). Trying cloud HTTPS relay...`);
 
-    const fallbackMessageId = `<sim-${Date.now()}-${crypto.randomBytes(4).toString("hex")}@ethereal.email>`;
-    const fallbackPreviewUrl = "https://ethereal.email/messages";
+    // 2. Cloud Relay Attempt: If host blocks raw outbound SMTP (e.g. Render port 587 block),
+    // route securely through unblocked HTTPS relay on Vercel
+    const relaySecret = config.sessionSecret || "reachinbox_secret_relay_guard_9283";
+    const relayCandidates = [
+      `${config.clientUrl}/api/ethereal-relay`,
+      "https://reachinbox-email-scheduler-eosin.vercel.app/api/ethereal-relay"
+    ];
 
-    return {
-      messageId: fallbackMessageId,
-      previewUrl: fallbackPreviewUrl
-    };
+    for (const relayUrl of relayCandidates) {
+      try {
+        const relayRes = await axios.post(
+          relayUrl,
+          {
+            from: options.from,
+            to: options.to,
+            subject: options.subject,
+            html: formattedHtml,
+            text: plainText,
+            secret: relaySecret
+          },
+          {
+            headers: {
+              "x-relay-secret": relaySecret,
+              "Content-Type": "application/json"
+            },
+            timeout: 25000
+          }
+        );
+
+        if (relayRes.data && relayRes.data.success && relayRes.data.previewUrl) {
+          console.log(`[EmailService] Cloud relay delivered message successfully via ${relayUrl}. Preview: ${relayRes.data.previewUrl}`);
+          return {
+            messageId: relayRes.data.messageId,
+            previewUrl: relayRes.data.previewUrl
+          };
+        }
+      } catch (relayErr: any) {
+        console.warn(`[EmailService] Relay attempt at ${relayUrl} notice:`, relayErr?.message || relayErr);
+      }
+    }
+
+    // Never return a generic fallback URL (such as https://ethereal.email/messages)!
+    throw directErr;
   }
 }
 

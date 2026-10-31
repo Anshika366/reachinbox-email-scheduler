@@ -81,12 +81,13 @@ export const SentList: React.FC<SentListProps> = ({
                   <a
                     href={email.preview_url}
                     target="_blank"
-                    rel="noreferrer"
+                    rel="noopener noreferrer"
                     onClick={(e) => e.stopPropagation()}
-                    title="Open Ethereal Preview"
-                    className="p-1 rounded hover:bg-gray-100 text-emerald-600 hover:text-emerald-700"
+                    title="View in Ethereal"
+                    className="inline-flex items-center space-x-1.5 px-2.5 py-1 rounded-md border border-emerald-500 text-emerald-700 text-xs font-semibold hover:bg-emerald-50 transition-colors"
                   >
-                    <ExternalLink className="w-4 h-4" />
+                    <span>View in Ethereal</span>
+                    <ExternalLink className="w-3.5 h-3.5" />
                   </a>
                 )}
                 <button

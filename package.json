@@ -12,6 +12,9 @@
     "build": "npm run build --workspaces",
     "test": "npm run test --workspace=backend"
   },
+  "dependencies": {
+    "nodemailer": "^6.10.0"
+  },
   "overrides": {
     "@rollup/rollup-win32-x64-msvc": "npm:@rollup/wasm-node@^4.66.0"
   },

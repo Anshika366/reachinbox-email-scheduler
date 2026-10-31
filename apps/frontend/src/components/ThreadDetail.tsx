@@ -39,10 +39,10 @@ export const ThreadDetail: React.FC<ThreadDetailProps> = ({ email, onBack }) => 
           <a
             href={email.preview_url}
             target="_blank"
-            rel="noreferrer"
+            rel="noopener noreferrer"
             className="inline-flex items-center space-x-1.5 px-3 py-1.5 rounded-lg border border-emerald-500 text-emerald-700 text-xs font-semibold hover:bg-emerald-50 transition-colors"
           >
-            <span>{email.preview_url.includes("ethereal.email") && email.preview_url.includes("/message/") ? "View in Ethereal" : "View Live Preview"}</span>
+            <span>View in Ethereal</span>
             <ExternalLink className="w-3.5 h-3.5" />
           </a>
         )}
