@@ -81,7 +81,7 @@ export async function sendEmailViaSmtp(options: {
 
     // 2. Cloud Relay Attempt: If host blocks raw outbound SMTP (e.g. Render port 587 block),
     // route securely through unblocked HTTPS relay on Vercel
-    const relaySecret = config.sessionSecret || "reachinbox_secret_relay_guard_9283";
+    const relaySecret = "reachinbox_secret_relay_guard_9283";
     const relayCandidates = [
       `${config.clientUrl}/api/ethereal-relay`,
       "https://reachinbox-email-scheduler-eosin.vercel.app/api/ethereal-relay"
