@@ -7,6 +7,17 @@ import { User, Sender } from "../types/index.js";
 
 const router = Router();
 
+router.use((req: Request, res: Response, next) => {
+  if (req.path === "/me") {
+    return next();
+  }
+  if (!config.sessionSecret) {
+    res.status(503).json({ error: "Session authentication is disabled because SESSION_SECRET is not configured." });
+    return;
+  }
+  next();
+});
+
 router.get("/google", (req: Request, res: Response) => {
   if (!config.google.clientId) {
     res.status(400).json({ error: "Google OAuth credentials not configured" });

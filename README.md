@@ -211,7 +211,7 @@ The project uses a root `.env` and `apps/backend/.env`. All sensitive credential
 | `PORT` | Yes | `4000` | Port for Express backend HTTP server |
 | `NODE_ENV` | Yes | `development` | Environment mode (`development` or `production`) |
 | `CLIENT_URL` | Yes | `http://localhost:5173` | Allowed CORS origin and OAuth redirect target |
-| `DATABASE_URL` | Yes | `postgres://postgres:postgrespassword@localhost:5433/reachinbox_scheduler` | PostgreSQL connection pool URL |
+| `DATABASE_URL` | Yes | `postgres://username:password@localhost:5433/reachinbox_scheduler` | PostgreSQL connection pool URL |
 | `REDIS_URL` | Yes | `redis://localhost:6379` | Redis connection URL for BullMQ and Lua scripts |
 | `ELASTICSEARCH_URL` | Yes | `http://localhost:9200` | Elasticsearch cluster endpoint |
 | `WORKER_CONCURRENCY` | Yes | `5` | Maximum simultaneous jobs processed per worker instance |
@@ -224,16 +224,17 @@ The project uses a root `.env` and `apps/backend/.env`. All sensitive credential
 | `GOOGLE_CLIENT_ID` | Yes (for OAuth) | *(from Google Cloud Console)* | Google OAuth 2.0 Web Client ID |
 | `GOOGLE_CLIENT_SECRET` | Yes (for OAuth) | *(from Google Cloud Console)* | Google OAuth 2.0 Web Client Secret |
 | `GOOGLE_CALLBACK_URL` | Yes | `http://localhost:4000/api/auth/google/callback` | Authorized Google OAuth redirect URI |
-| `SESSION_SECRET` | Yes | `reachinbox_secret_session_key_1234567890` | Secret key for signed session cookies |
+| `SESSION_SECRET` | Yes | *(set secure random string, min 32 chars)* | Secret key for signed session cookies |
 | `SLACK_CLIENT_ID` | Optional | *(from Slack Developer Portal)* | Slack App Client ID |
 | `SLACK_CLIENT_SECRET` | Optional | *(from Slack Developer Portal)* | Slack App Client Secret |
 | `SLACK_REDIRECT_URI` | Optional | `http://localhost:4000/api/integrations/slack/callback` | Slack OAuth callback URL |
-| `SLACK_ENCRYPTION_KEY` | Yes | `reachinbox_slack_encryption_key_32bytes_min` | 32-byte secret key for AES-256 token encryption |
+| `SLACK_ENCRYPTION_KEY` | Optional (if Slack enabled) | *(set secure random string, min 32 chars)* | 32-byte secret key for AES-256 token encryption |
+| `RELAY_SECRET` | Optional (for Cloud Relay) | *(set dedicated random secret token)* | Shared secret guarding outbound Ethereal HTTPS relay |
 | `BULL_BOARD_USER` | Yes | `admin` | HTTP Basic Auth username for queue monitor |
 | `BULL_BOARD_PASS` | Yes | *(set strong non-default password)* | HTTP Basic Auth password (min 8 chars, non-default) |
 
 ### Secret Safety and Production Setup
-- **Placeholder Values vs. Production Secrets**: The default secret strings shown above (`reachinbox_secret_session_key_...`, `reachinbox_slack_encryption_key_...`) are local development placeholders. In production environments, replace them with unique, cryptographically strong random secrets.
+- **Placeholder Values vs. Production Secrets**: The default placeholders in documentation and `.env.example` indicate required configurations. In production environments, supply unique, cryptographically strong random secrets.
 - **`SESSION_SECRET`**: Used by `express-session` to sign the HTTP-only session cookie (`connect.sid`). Generate a unique 32-byte secret (e.g., via `openssl rand -hex 32` or Node.js `crypto.randomBytes(32).toString('hex')`).
 - **`SLACK_ENCRYPTION_KEY`**: Key used for AES-256-CBC encryption of Slack Bot tokens in PostgreSQL (`access_token_encrypted`). Must be a distinct string of at least 32 characters/bytes.
 - **`BULL_BOARD_PASS`**: Password guarding the Bull Board administrative UI (`/admin/queues`). In production mode (`NODE_ENV=production`), passwords shorter than 8 characters or defaults like `adminpassword` are rejected by the authentication middleware.

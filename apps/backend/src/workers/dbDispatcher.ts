@@ -2,6 +2,7 @@ import { query } from "../db/index.js";
 import { EmailRecord } from "../types/index.js";
 import { sendEmailViaSmtp } from "../services/emailService.js";
 import { updateEmailDocumentStatus } from "../services/elasticsearchService.js";
+import { maskRecipientEmail } from "./emailWorker.js";
 
 let isPolling = false;
 
@@ -13,20 +14,27 @@ export function startDatabaseEmailDispatcher(): void {
     isPolling = true;
 
     try {
-      // 1. Recover any emails stuck in 'processing' for > 2 minutes (e.g. from container restarts)
+      // 1. If an email stuck in 'processing' for > 2 minutes already recorded an smtp_message_id,
+      // the SMTP relay accepted it before a crash. Finalize status to 'sent' rather than resending!
       await query(
         `UPDATE emails
-         SET status = 'scheduled', updated_at = NOW()
-         WHERE status = 'processing' AND updated_at < NOW() - INTERVAL '2 minutes'`
+         SET status = 'sent', updated_at = NOW()
+         WHERE status = 'processing'
+           AND smtp_message_id IS NOT NULL
+           AND updated_at < NOW() - INTERVAL '2 minutes'`
       );
 
-      // 2. Auto-recover any emails that failed recently with Connection timeout so they deliver
+      // 2. If an email stuck in 'processing' for > 2 minutes lacks smtp_message_id,
+      // its external delivery status is uncertain. Never blindly reset to 'scheduled' or resend!
+      // Mark as 'failed' with explicit delivery uncertainty notice requiring manual operator review.
       await query(
         `UPDATE emails
-         SET status = 'scheduled', scheduled_at = NOW(), error_details = NULL, updated_at = NOW()
-         WHERE status = 'failed' 
-           AND (error_details ILIKE '%timeout%' OR error_details ILIKE '%ETIMEDOUT%' OR error_details ILIKE '%ECONN%')
-           AND updated_at >= NOW() - INTERVAL '12 hours'`
+         SET status = 'failed',
+             error_details = 'Processing lease expired after 2 minutes with no SMTP confirmation. Automatic resend suppressed to prevent duplicate delivery (delivery status uncertain).',
+             updated_at = NOW()
+         WHERE status = 'processing'
+           AND smtp_message_id IS NULL
+           AND updated_at < NOW() - INTERVAL '2 minutes'`
       );
 
       // 3. Clear any legacy generic preview URLs that forced users to ethereal login
@@ -76,7 +84,7 @@ export function startDatabaseEmailDispatcher(): void {
           );
 
           await updateEmailDocumentStatus(email.id, "sent", sentAt);
-          console.log(`[Dispatcher] Successfully delivered scheduled email ${email.id} to ${email.recipient}`);
+          console.log(`[Dispatcher] Successfully delivered scheduled email ${email.id} to ${maskRecipientEmail(email.recipient)}`);
         } catch (sendErr: any) {
           console.error(`[Dispatcher] Delivery error for email ${email.id}:`, sendErr?.message || sendErr);
           await query(

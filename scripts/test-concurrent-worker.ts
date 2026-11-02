@@ -1,5 +1,5 @@
 import { Worker, Job, Queue } from "bullmq";
-import { redis, checkAndIncrementHourlyRateLimit, acquireSenderSendSlot } from "../apps/backend/src/services/redisService.js";
+import { redis, bullmqConnection, checkAndIncrementHourlyRateLimit, acquireSenderSendSlot } from "../apps/backend/src/services/redisService.js";
 import { query } from "../apps/backend/src/db/index.js";
 import { EmailJobData, EmailRecord } from "../apps/backend/src/types/index.js";
 import crypto from "crypto";
@@ -10,7 +10,7 @@ async function runConcurrentWorkerTest() {
   console.log("=== STARTING CONCURRENT WORKER TEST ===");
 
   const queue = new Queue<EmailJobData>(TEST_QUEUE, {
-    connection: redis as any
+    connection: bullmqConnection
   });
 
   const sendTimes: number[] = [];
@@ -50,7 +50,7 @@ async function runConcurrentWorkerTest() {
       return { status: "sent", sentAt: timestamp };
     },
     {
-      connection: redis as any,
+      connection: bullmqConnection,
       concurrency: 5
     }
   );

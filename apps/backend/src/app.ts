@@ -39,19 +39,36 @@ app.use(express.json({ limit: "10mb" }));
 app.use(express.urlencoded({ extended: true, limit: "10mb" }));
 app.use(cookieParser());
 
-app.use(
-  session({
-    secret: config.sessionSecret,
-    resave: false,
-    saveUninitialized: false,
-    cookie: {
-      httpOnly: true,
-      secure: isProduction,
-      sameSite: isProduction ? "none" : "lax",
-      maxAge: 7 * 24 * 60 * 60 * 1000
-    }
-  })
-);
+if (isProduction && (!config.sessionSecret || config.sessionSecret.length < 16)) {
+  throw new Error("CRITICAL: SESSION_SECRET must be configured with a secure non-default key (min 16 chars) in production.");
+}
+
+if (config.sessionSecret) {
+  app.use(
+    session({
+      secret: config.sessionSecret,
+      resave: false,
+      saveUninitialized: false,
+      cookie: {
+        httpOnly: true,
+        secure: isProduction,
+        sameSite: isProduction ? "none" : "lax",
+        maxAge: 7 * 24 * 60 * 60 * 1000
+      }
+    })
+  );
+} else {
+  // If SESSION_SECRET is not configured in non-production, fail closed:
+  // Do not use insecure hardcoded fallback credentials.
+  app.use((req: Request, _res: Response, next: NextFunction) => {
+    (req as any).session = {
+      destroy: (cb?: () => void) => {
+        if (cb) cb();
+      }
+    };
+    next();
+  });
+}
 
 const serverAdapter = new ExpressAdapter();
 serverAdapter.setBasePath("/admin/queues");

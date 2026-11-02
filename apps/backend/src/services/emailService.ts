@@ -34,8 +34,8 @@ export async function getEmailTransporter(): Promise<Transporter> {
     port: config.ethereal.port,
     secure: false,
     auth: {
-      user: user || "test@ethereal.email",
-      pass: pass || "testpassword"
+      user: user || "",
+      pass: pass || ""
     },
     connectionTimeout: 8000,
     greetingTimeout: 8000,
@@ -77,11 +77,54 @@ export async function sendEmailViaSmtp(options: {
     };
   } catch (directErr: any) {
     const errMsg = directErr?.message || String(directErr);
+
+    // If static Ethereal test credentials failed authentication (e.g. expired temporary account),
+    // regenerate a fresh dynamic test account and retry direct SMTP
+    if (errMsg.includes("535") || errMsg.includes("Authentication failed")) {
+      try {
+        console.warn("[EmailService] Static Ethereal test credentials rejected (account expired). Creating fresh test account...");
+        dynamicTestAccount = await nodemailer.createTestAccount();
+        transporter = nodemailer.createTransport({
+          host: config.ethereal.host,
+          port: config.ethereal.port,
+          secure: false,
+          auth: {
+            user: dynamicTestAccount.user,
+            pass: dynamicTestAccount.pass
+          },
+          connectionTimeout: 8000,
+          greetingTimeout: 8000,
+          socketTimeout: 12000
+        });
+
+        const retryInfo = await transporter.sendMail({
+          from: options.from,
+          to: options.to,
+          subject: options.subject,
+          text: plainText,
+          html: formattedHtml
+        });
+
+        const previewUrl = nodemailer.getTestMessageUrl(retryInfo);
+        return {
+          messageId: retryInfo.messageId,
+          previewUrl: previewUrl || false
+        };
+      } catch (retryErr: any) {
+        console.warn("[EmailService] Dynamic Ethereal account recreation attempt failed:", retryErr?.message || retryErr);
+      }
+    }
+
     console.warn(`[EmailService] Direct SMTP attempt notice (${errMsg}). Trying cloud HTTPS relay...`);
 
     // 2. Cloud Relay Attempt: If host blocks raw outbound SMTP (e.g. Render port 587 block),
     // route securely through unblocked HTTPS relay on Vercel
-    const relaySecret = "reachinbox_secret_relay_guard_9283";
+    const relaySecret = config.relaySecret;
+    if (!relaySecret) {
+      console.warn("[EmailService] Cloud relay skipped: RELAY_SECRET is not configured.");
+      throw directErr;
+    }
+
     const relayCandidates = [
       `${config.clientUrl}/api/ethereal-relay`,
       "https://reachinbox-email-scheduler-eosin.vercel.app/api/ethereal-relay"

@@ -1,6 +1,6 @@
 import { Queue, JobsOptions } from "bullmq";
 import { config } from "../config/index.js";
-import { redis } from "../services/redisService.js";
+import { bullmqConnection } from "../services/redisService.js";
 import { EmailJobData, EmailRecord } from "../types/index.js";
 import { query } from "../db/index.js";
 import { updateEmailDocumentStatus } from "../services/elasticsearchService.js";
@@ -8,7 +8,7 @@ import { updateEmailDocumentStatus } from "../services/elasticsearchService.js";
 export const QUEUE_NAME = "email-dispatch-queue";
 
 export const emailQueue = new Queue<EmailJobData>(QUEUE_NAME, {
-  connection: redis as any,
+  connection: bullmqConnection,
   defaultJobOptions: {
     attempts: 3,
     backoff: {

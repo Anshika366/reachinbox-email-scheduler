@@ -1,6 +1,7 @@
 import { scheduleEmailSchema, createSenderSchema } from "../src/validators/emailValidator.js";
 import { getHourlyWindowKey } from "../src/services/redisService.js";
-import { encryptToken, decryptToken } from "../src/services/slackService.js";
+import { encryptToken, decryptToken, isSlackConfigured } from "../src/services/slackService.js";
+import { config } from "../src/config/index.js";
 import { parse } from "csv-parse/sync";
 
 describe("Validation and Utility Unit Tests", () => {
@@ -50,14 +51,39 @@ describe("Validation and Utility Unit Tests", () => {
     expect(info.msRemaining).toBeLessThanOrEqual(3600000);
   });
 
-  test("encryptToken and decryptToken round-trip securely", () => {
-    const rawToken = "xoxb-1234567890-reachinbox-slack-secret";
+  test("isSlackConfigured and encryptToken fail closed when unconfigured", () => {
+    const origKey = config.slack.encryptionKey;
+    const origId = config.slack.clientId;
+    const origSec = config.slack.clientSecret;
+
+    // Simulate unconfigured Slack
+    config.slack.encryptionKey = "";
+    config.slack.clientId = "";
+    config.slack.clientSecret = "";
+
+    expect(isSlackConfigured()).toBe(false);
+    expect(() => encryptToken("raw-secret")).toThrow(/SLACK_ENCRYPTION_KEY must be configured/);
+    expect(() => decryptToken("iv:encrypted")).toThrow(/SLACK_ENCRYPTION_KEY must be configured/);
+
+    // Restore configured test key
+    config.slack.encryptionKey = origKey;
+    config.slack.clientId = origId;
+    config.slack.clientSecret = origSec;
+  });
+
+  test("encryptToken and decryptToken round-trip securely when configured", () => {
+    const origKey = config.slack.encryptionKey;
+    config.slack.encryptionKey = "test_key_32_characters_for_unit_tests!";
+
+    const rawToken = "xoxb-1234567890-test-slack-secret";
     const encrypted = encryptToken(rawToken);
     expect(encrypted).not.toBe(rawToken);
     expect(encrypted).toContain(":");
 
     const decrypted = decryptToken(encrypted);
     expect(decrypted).toBe(rawToken);
+
+    config.slack.encryptionKey = origKey;
   });
 
   test("CSV email extraction accurately parses headers and rows", () => {

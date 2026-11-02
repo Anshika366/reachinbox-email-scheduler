@@ -51,13 +51,14 @@ export const config = {
     clientSecret: process.env.GOOGLE_CLIENT_SECRET || "",
     callbackUrl: resolvedGoogleCallbackUrl
   },
-  sessionSecret: process.env.SESSION_SECRET || "reachinbox_secret_session_key_1234567890",
+  sessionSecret: process.env.SESSION_SECRET || "",
   slack: {
-    clientId: process.env.SLACK_CLIENT_ID || "12447532971649.12474034335824",
-    clientSecret: process.env.SLACK_CLIENT_SECRET || "20a592e0e404a1f8878be87ea680968f",
+    clientId: process.env.SLACK_CLIENT_ID || "",
+    clientSecret: process.env.SLACK_CLIENT_SECRET || "",
     redirectUri: resolvedSlackRedirectUri,
-    encryptionKey: process.env.SLACK_ENCRYPTION_KEY || "reachinbox_slack_encryption_key_32bytes_min"
+    encryptionKey: process.env.SLACK_ENCRYPTION_KEY || ""
   },
+  relaySecret: process.env.RELAY_SECRET || "",
   bullBoard: {
     user: process.env.BULL_BOARD_USER || "",
     pass: process.env.BULL_BOARD_PASS || ""

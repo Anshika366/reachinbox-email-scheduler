@@ -1,11 +1,12 @@
 import { query } from "../src/db/index.js";
 import { app } from "../src/app.js";
 import { emailQueue, reconcileScheduledJobs, addEmailToQueue } from "../src/queues/emailQueue.js";
-import { redis, checkAndIncrementHourlyRateLimit, acquireSenderSendSlot, getHourlyWindowKey } from "../src/services/redisService.js";
+import { redis, bullmqConnection, checkAndIncrementHourlyRateLimit, acquireSenderSendSlot, getHourlyWindowKey } from "../src/services/redisService.js";
 import { sendEmailViaSmtp } from "../src/services/emailService.js";
 import { indexEmailDocument, searchEmailsInEs } from "../src/services/elasticsearchService.js";
 import { encryptToken, decryptToken, getSlackOAuthUrl, sendRateLimitSlackAlert } from "../src/services/slackService.js";
 import { EmailRecord } from "../src/types/index.js";
+import { config } from "../src/config/index.js";
 import request from "supertest";
 import crypto from "crypto";
 
@@ -36,6 +37,7 @@ describe("ReachInbox Integration & System Test Suite", () => {
     await query("DELETE FROM senders WHERE user_id = $1", [testUserId]);
     await query("DELETE FROM users WHERE id = $1", [testUserId]);
     await emailQueue.close();
+    await bullmqConnection.quit().catch(() => {});
     await redis.quit();
   });
 
@@ -56,6 +58,20 @@ describe("ReachInbox Integration & System Test Suite", () => {
       const res = await request(app).get("/api/auth/me");
       expect(res.status).toBe(401);
       expect(res.body.user).toBeNull();
+    });
+
+    test("POST /api/auth/login fails closed when SESSION_SECRET is unconfigured", async () => {
+      const origSecret = config.sessionSecret;
+      config.sessionSecret = "";
+
+      const res = await request(app).post("/api/auth/login").send({
+        email: "test@example.com",
+        password: "securepassword123"
+      });
+      expect(res.status).toBe(503);
+      expect(res.body.error).toContain("SESSION_SECRET is not configured");
+
+      config.sessionSecret = origSecret;
     });
 
     test("GET /admin/queues returns 401 Unauthorized without Basic Auth credentials", async () => {
@@ -352,8 +368,41 @@ describe("ReachInbox Integration & System Test Suite", () => {
   });
 
   describe("Slack OAuth, Security & Alert Deduplication", () => {
-    test("Token encryption uses AES-256-CBC with unique IV and preserves token", () => {
-      const sampleToken = "xoxb-999888777-reachinbox-hiring-test-token";
+    test("Unconfigured Slack disables integration safely and fails closed", async () => {
+      const origId = config.slack.clientId;
+      const origSec = config.slack.clientSecret;
+      const origKey = config.slack.encryptionKey;
+
+      config.slack.clientId = "";
+      config.slack.clientSecret = "";
+      config.slack.encryptionKey = "";
+
+      expect(() => getSlackOAuthUrl(testUserId)).toThrow(/Slack integration is disabled/);
+      expect(() => encryptToken("some-token")).toThrow(/SLACK_ENCRYPTION_KEY must be configured/);
+
+      const alertResult = await sendRateLimitSlackAlert(
+        testUserId,
+        testSenderId,
+        testSenderEmail,
+        "window-test",
+        100,
+        new Date()
+      );
+      expect(alertResult).toBe(false);
+
+      const statusRes = await request(app).get("/api/integrations/slack/status");
+      expect(statusRes.body).toEqual({ isConnected: false, isConfigured: false });
+
+      config.slack.clientId = origId;
+      config.slack.clientSecret = origSec;
+      config.slack.encryptionKey = origKey;
+    });
+
+    test("Token encryption uses AES-256-CBC with unique IV and preserves token when configured", () => {
+      const origKey = config.slack.encryptionKey;
+      config.slack.encryptionKey = "test_slack_encryption_key_32bytes_long!";
+
+      const sampleToken = "xoxb-999888777-test-token";
       const enc1 = encryptToken(sampleToken);
       const enc2 = encryptToken(sampleToken);
 
@@ -363,9 +412,19 @@ describe("ReachInbox Integration & System Test Suite", () => {
 
       expect(decryptToken(enc1)).toBe(sampleToken);
       expect(decryptToken(enc2)).toBe(sampleToken);
+
+      config.slack.encryptionKey = origKey;
     });
 
-    test("Generates valid Slack OAuth URL with encoded state and required scopes", () => {
+    test("Generates valid Slack OAuth URL when configured", () => {
+      const origId = config.slack.clientId;
+      const origSec = config.slack.clientSecret;
+      const origKey = config.slack.encryptionKey;
+
+      config.slack.clientId = "mock-client-id";
+      config.slack.clientSecret = "mock-client-secret";
+      config.slack.encryptionKey = "test_slack_encryption_key_32bytes_long!";
+
       const urlString = getSlackOAuthUrl(testUserId);
       const parsedUrl = new URL(urlString);
 
@@ -377,9 +436,21 @@ describe("ReachInbox Integration & System Test Suite", () => {
       expect(stateRaw).toBeDefined();
       const decoded = JSON.parse(Buffer.from(stateRaw!, "base64").toString("utf8"));
       expect(decoded.userId).toBe(testUserId);
+
+      config.slack.clientId = origId;
+      config.slack.clientSecret = origSec;
+      config.slack.encryptionKey = origKey;
     });
 
     test("sendRateLimitSlackAlert enforces single notification per sender per hourly window", async () => {
+      const origId = config.slack.clientId;
+      const origSec = config.slack.clientSecret;
+      const origKey = config.slack.encryptionKey;
+
+      config.slack.clientId = "mock-client-id";
+      config.slack.clientSecret = "mock-client-secret";
+      config.slack.encryptionKey = "test_slack_encryption_key_32bytes_long!";
+
       const { windowKey } = getHourlyWindowKey();
       const rescheduledTime = new Date(Date.now() + 1800000);
 
@@ -409,6 +480,10 @@ describe("ReachInbox Integration & System Test Suite", () => {
       );
 
       expect(secondSendResult).toBe(false);
+
+      config.slack.clientId = origId;
+      config.slack.clientSecret = origSec;
+      config.slack.encryptionKey = origKey;
     });
   });
 });

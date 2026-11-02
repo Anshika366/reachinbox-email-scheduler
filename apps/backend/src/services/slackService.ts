@@ -7,7 +7,18 @@ import { SlackIntegration } from "../types/index.js";
 
 const ALGORITHM = "aes-256-cbc";
 
+export function isSlackConfigured(): boolean {
+  return Boolean(
+    config.slack.clientId &&
+    config.slack.clientSecret &&
+    config.slack.encryptionKey
+  );
+}
+
 function getCipherKey(): Buffer {
+  if (!config.slack.encryptionKey) {
+    throw new Error("SLACK_ENCRYPTION_KEY must be configured before encrypting or decrypting Slack credentials.");
+  }
   return crypto.createHash("sha256").update(config.slack.encryptionKey).digest();
 }
 
@@ -30,6 +41,9 @@ export function decryptToken(encryptedData: string): string {
 }
 
 export function getSlackOAuthUrl(userId: string): string {
+  if (!isSlackConfigured()) {
+    throw new Error("Slack integration is disabled because SLACK_CLIENT_ID, SLACK_CLIENT_SECRET, or SLACK_ENCRYPTION_KEY is not configured.");
+  }
   const state = Buffer.from(JSON.stringify({ userId, rand: crypto.randomBytes(8).toString("hex") })).toString("base64");
   const scopes = ["chat:write", "chat:write.public", "channels:read", "channels:join", "groups:read", "incoming-webhook"];
   const url = new URL("https://slack.com/oauth/v2/authorize");
@@ -41,6 +55,9 @@ export function getSlackOAuthUrl(userId: string): string {
 }
 
 export async function exchangeSlackCode(code: string, userId: string): Promise<void> {
+  if (!isSlackConfigured()) {
+    throw new Error("Slack integration is disabled because SLACK_CLIENT_ID or SLACK_CLIENT_SECRET is not configured.");
+  }
   const response = await axios.post(
     "https://slack.com/api/oauth.v2.access",
     new URLSearchParams({
@@ -117,6 +134,10 @@ export async function sendRateLimitSlackAlert(
   limit: number,
   rescheduledTo: Date
 ): Promise<boolean> {
+  if (!isSlackConfigured()) {
+    return false; // Safely skip Slack alert when integration is not configured
+  }
+
   try {
     const dedupeCheck = await query(
       "SELECT id FROM rate_limit_notifications WHERE sender_id = $1 AND hourly_window = $2",

@@ -45,14 +45,12 @@ export default async function handler(req, res) {
   const { from, to, subject, html, text, secret } = req.body || {};
   const secretHeader = req.headers["x-relay-secret"];
 
-  const validSecrets = [
-    process.env.SESSION_SECRET,
-    "reachinbox_secret_relay_guard_9283",
-    "reachinbox_production_grade_session_secret_7fb6e7b1",
-    "reachinbox_secret_session_key_1234567890"
-  ].filter(Boolean);
+  const relaySecret = process.env.RELAY_SECRET;
+  if (!relaySecret) {
+    return res.status(500).json({ error: "RELAY_SECRET is not configured on the relay server" });
+  }
 
-  const isAuthorized = validSecrets.includes(secret) || validSecrets.includes(secretHeader);
+  const isAuthorized = secret === relaySecret || secretHeader === relaySecret;
   if (!isAuthorized) {
     return res.status(401).json({ error: "Unauthorized relay request" });
   }
